@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
-<title>Canup 見積書発行</title>
+<title>Canup 見積書・請求書</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
@@ -35,6 +35,8 @@
   .seg button { font:inherit; font-size:13px; padding:7px 0; border:0; background:#fff; color:var(--sub); cursor:pointer; }
   .seg button + button { border-left:1px solid var(--line); }
   .seg button.on { background:var(--navy); color:#fff; font-weight:700; }
+  .seg.big button { font-size:15px; padding:10px 0; }
+  .saved { font-size:12px; color:var(--faint); text-align:right; margin-top:6px; min-height:1.4em; }
   .item { border-top:1px solid var(--line); padding:10px 0 4px; }
   .item:first-child { border-top:0; padding-top:0; }
   .item .r1 { display:grid; grid-template-columns:1fr auto; gap:8px; }
@@ -68,7 +70,7 @@
   #doc .dest { font-size:18px; font-weight:700; border-bottom:1px solid #111; padding-bottom:4px; margin-bottom:14px; min-height:34px; }
   #doc .meta { width:100%; border-collapse:collapse; font-size:12px; }
   #doc .meta td { padding:2px 0; }
-  #doc .meta td:first-child { color:#555; width:70px; }
+  #doc .meta td:first-child { color:#555; width:80px; }
   #doc .meta td:last-child { text-align:right; }
   #doc .issuer { margin-top:18px; font-size:11.5px; line-height:1.7; position:relative; }
   #doc .issuer .seal { position:absolute; top:-10px; right:0; width:66px; height:66px; opacity:.9; }
@@ -99,7 +101,7 @@
 </head>
 <body>
 <header class="bar">
-  <h1>Canup 見積書発行</h1>
+  <h1>Canup 見積書・請求書</h1>
   <span class="who" id="who">未接続</span>
   <button class="plain" type="button" onclick="toggleSetup()">接続設定</button>
 </header>
@@ -118,6 +120,17 @@
     </section>
 
     <section class="panel">
+      <h2>書類</h2>
+      <div class="seg big">
+        <button type="button" id="typeQuote" class="on" onclick="setDocType('quote')">見積書</button>
+        <button type="button" id="typeInvoice" onclick="setDocType('invoice')">請求書</button>
+      </div>
+      <label for="histPick">過去の書類から呼び出す</label>
+      <select id="histPick"><option value="">(接続すると発行済みの書類が並びます)</option></select>
+      <p class="hint">呼び出すと宛名・件名・明細・備考が入ります。見積書を呼び出して「請求書」で発行すれば、そのまま請求書になります。</p>
+    </section>
+
+    <section class="panel">
       <h2>宛先と件名</h2>
       <label>宛名</label>
       <div class="seg" role="tablist">
@@ -129,13 +142,17 @@
         <input id="to" autocomplete="off" placeholder="例: ○○不動産株式会社" aria-label="宛名(新規)" hidden>
         <select id="honorific" aria-label="敬称"><option>御中</option><option>様</option></select>
       </div>
-      <p class="hint" id="toHint">案件管理シートの商談先と、過去に見積書を出した宛名が並びます。</p>
+      <p class="hint" id="toHint">案件管理シートの商談先と、過去に書類を出した宛名が並びます。</p>
       <label for="subject">件名</label>
       <input id="subject" placeholder="例: 残置物回収一式">
       <div class="two">
         <div>
           <label for="date">発行日</label>
           <input id="date" type="date">
+        </div>
+        <div id="dueBox" hidden>
+          <label for="due">お支払期限</label>
+          <input id="due" type="date">
         </div>
         <div>
           <label for="taxMode">単価の書き方</label>
@@ -164,7 +181,8 @@
       <textarea id="note" placeholder="例: 作業日は別途ご相談。駐車場代は実費。"></textarea>
       <button class="issue" id="issueBtn" type="button" onclick="issue()">見積書を発行(PDF)</button>
       <div class="msg" id="msg"></div>
-      <p class="hint">発行すると見積番号が振られ、PDFがこの端末にダウンロードされます。同じPDFがDriveの「Canup見積書」フォルダと「見積台帳」シートにも記録されます。</p>
+      <p class="hint" id="issueHint"></p>
+      <div class="saved"><span id="savedAt"></span> <button class="linkbtn" type="button" onclick="clearForm()">入力をすべて消す</button></div>
     </section>
   </div>
 
@@ -174,20 +192,20 @@
       <div class="scaler" id="scaler">
         <div id="doc">
           <div class="draft" id="draft">下書き</div>
-          <h3>御見積書</h3>
+          <h3 id="dTitle">御見積書</h3>
           <div class="top">
             <div>
               <div class="dest" id="dDest"></div>
-              <div>下記のとおりお見積り申し上げます。</div>
+              <div id="dLead">下記のとおりお見積り申し上げます。</div>
               <div class="subj"><span>件名</span><span id="dSubj"></span></div>
-              <div class="amountBox"><span>御見積金額</span><b id="dAmount">¥0</b></div>
+              <div class="amountBox"><span id="dAmountLabel">御見積金額</span><b id="dAmount">¥0</b></div>
               <div class="amountNote" id="dAmountNote">(税込)</div>
             </div>
             <div>
               <table class="meta">
-                <tr><td>見積番号</td><td id="dNo">発行時に採番</td></tr>
+                <tr><td id="dNoLabel">見積番号</td><td id="dNo">発行時に採番</td></tr>
                 <tr><td>発行日</td><td id="dDate"></td></tr>
-                <tr><td>有効期限</td><td id="dValid"></td></tr>
+                <tr><td id="dValidLabel">有効期限</td><td id="dValid"></td></tr>
               </table>
               <div class="issuer" id="dIssuer"></div>
             </div>
@@ -216,7 +234,13 @@
 const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbyuCVj4OsMXzrhF6AFxGG8uQGFj887OGhWDpVW3EY_5_b2gUiDmhtoX-dPo_h-rneO1/exec';
 const MAX_ITEMS = 15;
 const MIN_ROWS = 10;
-const LS = { url:'canupQuote.apiUrl', key:'canupQuote.apiKey' };
+const LS = { url:'canupQuote.apiUrl', key:'canupQuote.apiKey', draft:'canupQuote.draft' };
+const DOC = {
+  quote:   { label:'見積書', title:'御見積書', lead:'下記のとおりお見積り申し上げます。', amount:'御見積金額', noLabel:'見積番号', limit:'有効期限',
+             hint:'発行すると見積番号が振られ、PDFがこの端末にダウンロードされます。同じPDFがDriveの「Canup見積書」フォルダに、内容は「見積台帳」「発行明細」シートにたまります。' },
+  invoice: { label:'請求書', title:'御請求書', lead:'下記のとおりご請求申し上げます。', amount:'ご請求金額', noLabel:'請求番号', limit:'お支払期限',
+             hint:'発行すると請求番号が振られ、PDFがこの端末にダウンロードされます。同じPDFがDriveの「Canup見積書」フォルダに、内容は「請求台帳」「発行明細」シートにたまります。' }
+};
 
 const $ = id => document.getElementById(id);
 const yen = n => Number(n || 0).toLocaleString('ja-JP');
@@ -227,6 +251,9 @@ function lsSet(k,v){ try { localStorage.setItem(k, v); } catch(e){} }
 
 let issuer = null;
 let validDays = 30;
+let payDays = 30;
+let docType = 'quote';
+let fromNo = '';   // 呼び出した元の書類番号(請求台帳の「元の見積番号」に入る)
 let busy = false;
 
 // ---------- 明細 ----------
@@ -284,6 +311,7 @@ function render(issued) {
     el.querySelector('.amt').textContent = yen(Math.round(Number(el.querySelector('.qty').value || 0) * Number(el.querySelector('.price').value || 0)));
   });
   const c = issued || calc(items, taxMode);
+  const D = DOC[docType];
   $('subLabel').textContent = inTax ? '小計(税抜)' : '小計';
   $('taxLabel').textContent = inTax ? 'うち消費税(10%)' : '消費税(10%)';
   $('sSub').textContent = yen(c.subtotal); $('sTax').textContent = yen(c.tax); $('sTotal').textContent = '¥' + yen(c.total);
@@ -294,8 +322,10 @@ function render(issued) {
   $('dAmount').textContent = '¥' + yen(c.total);
   $('dAmountNote').textContent = inTax ? '(税込・うち消費税 ¥' + yen(c.tax) + ')' : '(税込)';
   const date = issued ? issued.issueDate : $('date').value;
+  $('dTitle').textContent = D.title; $('dLead').textContent = D.lead; $('dAmountLabel').textContent = D.amount;
+  $('dNoLabel').textContent = D.noLabel; $('dValidLabel').textContent = D.limit;
   $('dDate').textContent = jpDate(date);
-  $('dValid').textContent = jpDate(issued ? issued.validDate : addDays(date, validDays));
+  $('dValid').textContent = jpDate(issued ? issued.validDate : (docType === 'invoice' ? $('due').value : addDays(date, validDays)));
   $('dNo').textContent = issued ? issued.no : '発行時に採番';
   $('draft').style.display = issued ? 'none' : 'block';
 
@@ -323,6 +353,69 @@ function render(issued) {
   const note = [$('note').value.trim(), iss && iss.bank ? 'お振込先: ' + iss.bank : ''].filter(Boolean).join('\n');
   $('dNote').textContent = note;
   fitPreview();
+  if (!issued) saveDraft();
+}
+
+// ---------- 入力の自動保存(この端末のブラウザに) ----------
+function saveDraft() {
+  if (restoring || $('issueBtn').dataset.done) return;   // 発行後は次の書類を始めるまで保存しない
+  const d = { docType, toMode, to: $('to').value, honorific: $('honorific').value, subject: $('subject').value,
+    taxMode: $('taxMode').value, note: $('note').value, items: readItems(), fromNo };
+  lsSet(LS.draft, JSON.stringify(d));
+  const t = new Date();
+  $('savedAt').textContent = '入力は自動で保存されています(' + t.getHours() + ':' + String(t.getMinutes()).padStart(2, '0') + ')';
+}
+
+let restoring = false;
+function fillForm(d) {
+  restoring = true;
+  try {
+    if (d.docType) setDocType(d.docType);
+    setToMode(d.toMode || 'list');
+    $('to').value = d.to || '';
+    $('toPick').value = d.to || '';
+    $('honorific').value = d.honorific || '御中';
+    $('subject').value = d.subject || '';
+    $('taxMode').value = d.taxMode === '内税' ? '内税' : '外税';
+    $('note').value = d.note || '';
+    fromNo = d.fromNo || '';
+    $('items').innerHTML = '';
+    (d.items && d.items.length ? d.items : [{}]).forEach(it => addItem(it));
+    syncPick();
+  } finally {
+    restoring = false;
+  }
+  render();
+}
+
+// 一覧モードなのに一覧に無い宛名なら、新規入力に切り替えて値を残す
+function syncPick() {
+  const v = $('to').value;
+  if (toMode !== 'list' || !v) return;
+  const opts = [...$('toPick').options].map(o => o.value);
+  const hon = $('honorific').value;
+  if (opts.indexOf(v) >= 0) $('toPick').value = v;
+  else if (opts.indexOf(v + ' 様') >= 0 || opts.indexOf(v + '様') >= 0) $('toPick').value = opts.find(o => o === v + ' 様' || o === v + '様');
+  else if ($('toPick').options.length > 1) { setToMode('new'); $('to').value = v; $('honorific').value = hon; }
+}
+
+function clearForm() {
+  fromNo = '';
+  $('histPick').value = '';
+  resetForm();
+}
+
+// ---------- 書類の種類 ----------
+function setDocType(t) {
+  docType = t === 'invoice' ? 'invoice' : 'quote';
+  const inv = docType === 'invoice';
+  $('typeQuote').classList.toggle('on', !inv);
+  $('typeInvoice').classList.toggle('on', inv);
+  $('dueBox').hidden = !inv;
+  if (inv && !$('due').value) $('due').value = addDays($('date').value, payDays);
+  $('issueHint').textContent = DOC[docType].hint;
+  if (!$('issueBtn').dataset.done) $('issueBtn').textContent = DOC[docType].label + 'を発行(PDF)';
+  render();
 }
 
 function fitPreview() {
@@ -360,11 +453,14 @@ async function connect(showOk) {
   $('who').textContent = '接続中...';
   try {
     const init = await api('init');
-    issuer = init.issuer; validDays = init.validDays || 30;
+    issuer = init.issuer; validDays = init.validDays || 30; payDays = init.payDays || 30;
     $('who').textContent = '発行元: ' + (issuer.company || '(社名未設定)');
     fillList('itemList', init.items);
+    const keep = $('to').value, keepHon = $('honorific').value;
     fillPick(init.recipients);
-    if (!(init.recipients || []).length) setToMode('new');
+    fillHistory(init.history);
+    if (!(init.recipients || []).length && toMode === 'list') setToMode('new');
+    if (keep) { $('to').value = keep; $('honorific').value = keepHon; syncPick(); }
     if (!init.ready) setMsg('msg', 'スプレッドシートの初期設定がまだです。「見積書」メニューから「初期設定」を実行してください。', 'err');
     if (showOk) setMsg('setupMsg', '接続できました。', 'ok');
     render();
@@ -399,11 +495,21 @@ function setToMode(mode) {
   $('to').hidden = !isNew;
   $('toHint').textContent = isNew
     ? '一覧にない宛名を入れます。発行すると見積台帳に記録され、次回から一覧に並びます。'
-    : '案件管理シートの商談先と、過去に見積書を出した宛名が並びます。';
+    : '案件管理シートの商談先と、過去に書類を出した宛名が並びます。';
   $('to').value = '';
   $('toPick').value = '';
-  if (isNew) $('to').focus();
+  if (isNew && !restoring) $('to').focus();
   render();
+}
+
+function fillHistory(arr) {
+  const sel = $('histPick');
+  sel.innerHTML = '<option value="">' + ((arr && arr.length) ? '選んでください(新しい順・' + arr.length + '件)' : '発行済みの書類はまだありません') + '</option>';
+  (arr || []).forEach(h => {
+    const o = document.createElement('option'); o.value = h.no;
+    o.textContent = h.no + '  ' + (h.type === 'invoice' ? '請求' : '見積') + '  ' + h.to + (h.subject ? '  ' + h.subject : '') + '  ¥' + yen(h.total);
+    sel.appendChild(o);
+  });
 }
 
 function toggleSetup() {
@@ -441,8 +547,11 @@ async function issue() {
   if (busy) return;
   const data = {
     to: $('to').value.trim(), honorific: $('honorific').value, subject: $('subject').value.trim(),
-    date: $('date').value, taxMode: $('taxMode').value, note: $('note').value.trim(), items: readItems()
+    date: $('date').value, taxMode: $('taxMode').value, note: $('note').value.trim(), items: readItems(),
+    docType, due: docType === 'invoice' ? $('due').value : '', fromNo
   };
+  const D = DOC[docType];
+  if (docType === 'invoice' && !data.due) return setMsg('msg', 'お支払期限を入れてください。', 'err');
   if (!data.to) return setMsg('msg', toMode === 'new' ? '宛名を入れてください。' : '宛名を一覧から選んでください(一覧にない場合は「新規に入力」)。', 'err');
   if (!data.items.some(i => i.name && Number(i.qty) && i.price !== '')) return setMsg('msg', '品目・数量・単価がそろった行を1つ以上入れてください。', 'err');
   if (!issuer && !(await connect(false))) return;
@@ -450,21 +559,24 @@ async function issue() {
   busy = true; $('issueBtn').disabled = true;
   let issued = null;
   try {
-    setMsg('msg', '見積番号を取っています...', '');
+    setMsg('msg', D.noLabel + 'を取っています...', '');
     issued = await api('issue', { data });
     render(issued);
     setMsg('msg', issued.no + ' のPDFを作っています...', '');
     const pdf = await makePdf();
-    const fileName = issued.no + '_' + data.to.replace(/[\\\/:*?"<>|\s]+/g, '_').slice(0, 40) + '_見積書.pdf';
+    const fileName = issued.no + '_' + data.to.replace(/[\\\/:*?"<>|\s]+/g, '_').slice(0, 40) + '_' + D.label + '.pdf';
     pdf.save(fileName);
     setMsg('msg', issued.no + ' をダウンロードしました。Driveに保存しています...', '');
     const b64 = pdf.output('datauristring').split(',')[1];
     const saved = await api('attachPdf', { no: issued.no, pdf: b64 });
     setMsg('msg', issued.no + ' を発行しました(合計 ¥' + yen(issued.total) + ')。', 'ok', { href: saved.url, text: 'Driveで開く' });
-    $('issueBtn').textContent = '続けて別の見積書を作る';
-    $('issueBtn').onclick = resetForm;
+    $('issueBtn').textContent = '続けて別の書類を作る';
+    $('issueBtn').dataset.done = '1';
+    $('issueBtn').onclick = clearForm;
+    lsSet(LS.draft, '');
+    connect(false).then(() => render(issued));
   } catch (e) {
-    const where = issued ? '(' + issued.no + ' は見積台帳に記録済み。PDFの保存だけ失敗)' : '';
+    const where = issued ? '(' + issued.no + ' は台帳に記録済み。PDFの保存だけ失敗)' : '';
     setMsg('msg', e.message + where, 'err');
     if (issued) render(issued);
   } finally {
@@ -476,14 +588,30 @@ function resetForm() {
   ['to','subject','note'].forEach(id => $(id).value = '');
   setToMode(toMode);
   $('items').innerHTML = ''; addItem();
-  $('issueBtn').textContent = '見積書を発行(PDF)';
+  delete $('issueBtn').dataset.done;
+  $('issueBtn').textContent = DOC[docType].label + 'を発行(PDF)';
   $('issueBtn').onclick = issue;
+  if (docType === 'invoice') $('due').value = addDays($('date').value, payDays);
   setMsg('msg', '', '');
   render();
 }
 
 // ---------- 起動 ----------
-['to','honorific','subject','date','taxMode','note'].forEach(id => $(id).addEventListener('input', () => render()));
+['to','honorific','subject','date','due','taxMode','note'].forEach(id => $(id).addEventListener('input', () => render()));
+$('histPick').addEventListener('change', async e => {
+  const no = e.target.value;
+  if (!no) return;
+  setMsg('msg', no + ' を呼び出しています...', '');
+  try {
+    const d = await api('load', { no });
+    const keepType = docType;
+    fillForm(Object.assign({}, d, { docType: keepType, toMode: 'list', fromNo: d.no }));
+    const as = keepType !== d.docType ? '(' + DOC[keepType].label + 'として発行されます)' : '';
+    setMsg('msg', no + ' の内容を入れました' + as + '。直してから発行してください。', 'ok');
+  } catch (err) {
+    setMsg('msg', err.message, 'err');
+  }
+});
 $('toPick').addEventListener('change', e => {
   const v = e.target.value;
   if (!v) { $('to').value = ''; render(); return; }
@@ -496,7 +624,9 @@ window.addEventListener('resize', fitPreview);
 (function init() {
   const d = new Date();
   $('date').value = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
-  addItem();
+  let draft = null;
+  try { draft = JSON.parse(lsGet(LS.draft) || 'null'); } catch (e) {}
+  if (draft) fillForm(draft); else { setDocType('quote'); addItem(); }
   if (apiUrl() && lsGet(LS.key)) connect(false);
   else { $('setup').classList.add('show'); $('apiUrl').value = apiUrl(); }
 })();

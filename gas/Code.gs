@@ -7,6 +7,17 @@ const SHEET_TEMPLATE = '見積書テンプレ';
 const SHEET_LEDGER = '見積台帳';
 const SHEET_CHOICES = '選択肢';
 const SHEET_ANKEN = '案件管理';
+const SHEET_INVOICE = '請求台帳';
+const SHEET_DETAIL = '発行明細';
+
+// 書類の種類ごとの台帳・番号・期限
+const DOCS = {
+  quote: { label: '見積書', sheet: SHEET_LEDGER, noHead: '見積番号', prefixKey: '見積番号の頭', prefixDef: 'Q',
+    daysKey: '有効期限(日)', limitHead: '有効期限', extra: ['敬称', '備考'] },
+  invoice: { label: '請求書', sheet: SHEET_INVOICE, noHead: '請求番号', prefixKey: '請求番号の頭', prefixDef: 'INV',
+    daysKey: '支払期限(日)', limitHead: '支払期限', extra: ['敬称', '備考', '元の見積番号', '入金日'] },
+};
+const DETAIL_HEAD = ['書類番号', '種別', '発行日', '宛名', '行', '品目', '数量', '単位', '単価', '金額'];
 const ITEM_FIRST_ROW = 15;
 const ITEM_ROWS = 15;
 const TAX_RATE = 0.1;
@@ -40,6 +51,7 @@ function doPost(e) {
     if (body.action === 'init') out = apiInit_(ss, st);
     else if (body.action === 'issue') out = apiIssue_(ss, st, body.data || {});
     else if (body.action === 'attachPdf') out = apiAttachPdf_(ss, st, body);
+    else if (body.action === 'load') out = apiLoad_(ss, body.no);
     else throw new Error('不明な操作です: ' + body.action);
     out.ok = true;
   } catch (err) {
@@ -49,12 +61,16 @@ function doPost(e) {
 }
 
 function apiInit_(ss, st) {
+  ensureSettingRows_(ss);
+  st = readSettings_(ss);
   const init = getInitData();
   return {
     issuer: issuerInfo_(st),
     validDays: init.validDays,
+    payDays: Number(st['支払期限(日)']) || 30,
     recipients: init.recipients,
     items: init.items,
+    history: history_(ss, 40),
     ready: init.ready && !!ss.getSheetByName(SHEET_LEDGER),
   };
 }
@@ -63,13 +79,27 @@ function apiIssue_(ss, st, data) {
   const lock = LockService.getDocumentLock();
   lock.waitLock(30000);
   try {
-    const ledger = ss.getSheetByName(SHEET_LEDGER);
-    if (!ledger) throw new Error('見積台帳シートがありません。スプレッドシートの「見積書」メニューから「初期設定」を実行してください。');
-    const q = calcQuote_(data, st);
-    const no = nextQuoteNo_(ledger, st['見積番号の頭'] || 'Q', q.issue);
-    ledger.appendRow([no, q.issue, data.to, data.subject || '', q.taxMode, q.subtotal, q.tax, q.total, q.valid, '(PDF保存待ち)']);
+    const type = data.docType === 'invoice' ? 'invoice' : 'quote';
+    const doc = DOCS[type];
+    const ledger = ensureLedger_(ss, type);
+    const detail = ensureDetail_(ss);
+    const q = calcQuote_(data, st, type);
+    const no = nextQuoteNo_(ledger, st[doc.prefixKey] || doc.prefixDef, q.issue);
+    const rec = {
+      '発行日': q.issue, '宛名': data.to, '件名': data.subject || '', '税区分': q.taxMode,
+      '小計': q.subtotal, '消費税': q.tax, '合計': q.total, 'PDF': '(PDF保存待ち)',
+      '敬称': data.honorific || '御中', '備考': data.note || '', '元の見積番号': data.fromNo || '',
+    };
+    rec[doc.noHead] = no;
+    rec[doc.limitHead] = q.valid;
+    const head = headerOf_(ledger);
+    ledger.appendRow(head.map(h => rec[h] !== undefined ? rec[h] : ''));
+    // 明細は1行ずつ「発行明細」にたまる(集計・呼び出し用)
+    const rows = q.items.map((it, i) => [no, doc.label, q.issue, data.to, i + 1, it.name, Number(it.qty), it.unit || '式',
+      Number(it.price), Math.round(Number(it.qty) * Number(it.price))]);
+    detail.getRange(detail.getLastRow() + 1, 1, rows.length, DETAIL_HEAD.length).setValues(rows);
     return {
-      no: no,
+      no: no, docType: type,
       issueDate: Utilities.formatDate(q.issue, 'Asia/Tokyo', 'yyyy-MM-dd'),
       validDate: Utilities.formatDate(q.valid, 'Asia/Tokyo', 'yyyy-MM-dd'),
       subtotal: q.subtotal, tax: q.tax, total: q.total,
@@ -81,17 +111,123 @@ function apiIssue_(ss, st, data) {
 }
 
 function apiAttachPdf_(ss, st, body) {
-  if (!body.no || !body.pdf) throw new Error('見積番号かPDFがありません。');
-  const ledger = ss.getSheetByName(SHEET_LEDGER);
-  const nos = ledger.getRange(2, 1, Math.max(ledger.getLastRow() - 1, 1), 1).getValues().map(r => String(r[0]));
-  const idx = nos.indexOf(String(body.no));
-  if (idx < 0) throw new Error('見積台帳に ' + body.no + ' が見つかりません。');
-  const to = ledger.getRange(idx + 2, 3).getValue();
+  if (!body.no || !body.pdf) throw new Error('書類番号かPDFがありません。');
+  const hit = findDoc_(ss, body.no);
+  if (!hit) throw new Error('台帳に ' + body.no + ' が見つかりません。');
   const blob = Utilities.newBlob(Utilities.base64Decode(body.pdf), 'application/pdf',
-    body.no + '_' + safeName_(to) + '_見積書.pdf');
+    body.no + '_' + safeName_(hit.rec['宛名']) + '_' + DOCS[hit.type].label + '.pdf');
   const file = getFolder_(ss, st).createFile(blob);
-  ledger.getRange(idx + 2, 10).setValue(file.getUrl());
+  hit.sheet.getRange(hit.row, hit.head.indexOf('PDF') + 1).setValue(file.getUrl());
   return { url: file.getUrl() };
+}
+
+// 過去の書類を画面に呼び出す(明細は「発行明細」から)
+function apiLoad_(ss, no) {
+  const hit = findDoc_(ss, no);
+  if (!hit) throw new Error(no + ' が台帳に見つかりません。');
+  const r = hit.rec;
+  let items = [];
+  const detail = ss.getSheetByName(SHEET_DETAIL);
+  if (detail && detail.getLastRow() > 1) {
+    items = detail.getRange(2, 1, detail.getLastRow() - 1, DETAIL_HEAD.length).getValues()
+      .filter(v => String(v[0]) === String(no))
+      .sort((a, b) => a[4] - b[4])
+      .map(v => ({ name: String(v[5]), qty: v[6], unit: String(v[7]), price: v[8] }));
+  }
+  return {
+    no: String(no), docType: hit.type, to: String(r['宛名'] || ''), honorific: String(r['敬称'] || '御中'),
+    subject: String(r['件名'] || ''), taxMode: r['税区分'] === '内税' ? '内税' : '外税', note: String(r['備考'] || ''), items,
+  };
+}
+
+function history_(ss, limit) {
+  const out = [];
+  Object.keys(DOCS).forEach(type => {
+    const sh = ss.getSheetByName(DOCS[type].sheet);
+    if (!sh || sh.getLastRow() < 2) return;
+    const head = headerOf_(sh);
+    const c = h => head.indexOf(h);
+    sh.getRange(2, 1, sh.getLastRow() - 1, head.length).getValues().forEach(v => {
+      if (!v[0]) return;
+      const d = v[c('発行日')];
+      out.push({ no: String(v[0]), type, date: d instanceof Date ? Utilities.formatDate(d, 'Asia/Tokyo', 'yyyy-MM-dd') : String(d),
+        to: String(v[c('宛名')] || ''), subject: String(v[c('件名')] || ''), total: Number(v[c('合計')]) || 0 });
+    });
+  });
+  out.sort((a, b) => (b.date + b.no).localeCompare(a.date + a.no));
+  return out.slice(0, limit);
+}
+
+function findDoc_(ss, no) {
+  for (const type of Object.keys(DOCS)) {
+    const sh = ss.getSheetByName(DOCS[type].sheet);
+    if (!sh || sh.getLastRow() < 2) continue;
+    const head = headerOf_(sh);
+    const vals = sh.getRange(2, 1, sh.getLastRow() - 1, head.length).getValues();
+    for (let i = vals.length - 1; i >= 0; i--) {
+      if (String(vals[i][0]) === String(no)) {
+        const rec = {};
+        head.forEach((h, j) => rec[h] = vals[i][j]);
+        return { type, sheet: sh, row: i + 2, head, rec };
+      }
+    }
+  }
+  return null;
+}
+
+function headerOf_(sh) {
+  return sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(String);
+}
+
+// 台帳が無ければ作り、足りない列があれば右に足す(既存の行は動かさない)
+function ensureLedger_(ss, type) {
+  const doc = DOCS[type];
+  let sh = ss.getSheetByName(doc.sheet);
+  const want = [doc.noHead, '発行日', '宛名', '件名', '税区分', '小計', '消費税', '合計', doc.limitHead, 'PDF'].concat(doc.extra);
+  if (!sh) {
+    sh = ss.insertSheet(doc.sheet);
+    sh.getRange(1, 1, 1, want.length).setValues([want]);
+    sh.setFrozenRows(1);
+    [130, 100, 220, 260, 70, 100, 90, 110, 100, 320].forEach((w, i) => sh.setColumnWidth(i + 1, w));
+    sh.getRange('B:B').setNumberFormat('yyyy/mm/dd');
+    sh.getRange('I:I').setNumberFormat('yyyy/mm/dd');
+    sh.getRange('F:H').setNumberFormat('#,##0');
+  } else {
+    const head = headerOf_(sh);
+    const miss = want.filter(h => head.indexOf(h) < 0);
+    if (miss.length) sh.getRange(1, head.length + 1, 1, miss.length).setValues([miss]);
+  }
+  sh.getRange(1, 1, 1, sh.getLastColumn()).setFontWeight('bold').setBackground('#1F3864').setFontColor('#FFFFFF');
+  return sh;
+}
+
+function ensureDetail_(ss) {
+  let sh = ss.getSheetByName(SHEET_DETAIL);
+  if (sh) return sh;
+  sh = ss.insertSheet(SHEET_DETAIL);
+  sh.getRange(1, 1, 1, DETAIL_HEAD.length).setValues([DETAIL_HEAD])
+    .setFontWeight('bold').setBackground('#1F3864').setFontColor('#FFFFFF');
+  sh.setFrozenRows(1);
+  [130, 70, 100, 220, 40, 220, 60, 50, 90, 100].forEach((w, i) => sh.setColumnWidth(i + 1, w));
+  sh.getRange('C:C').setNumberFormat('yyyy/mm/dd');
+  sh.getRange('I:J').setNumberFormat('#,##0');
+  return sh;
+}
+
+// あとから増えた設定項目を「設定」シートの末尾に足す
+function ensureSettingRows_(ss) {
+  const sh = ss.getSheetByName(SHEET_SETTINGS);
+  if (!sh) return;
+  const keys = sh.getRange(1, 1, sh.getLastRow(), 1).getValues().map(r => r[0]);
+  const add = [
+    ['請求番号の頭', 'INV', '請求番号 = 頭-YYMMDD-連番'],
+    ['支払期限(日)', 30, '請求書の支払期限の初期値(発行日からの日数)。画面で変えられる'],
+  ].filter(r => keys.indexOf(r[0]) < 0);
+  if (!add.length) return;
+  const at = sh.getLastRow() + 1;
+  sh.getRange(at, 1, add.length, 3).setValues(add);
+  sh.getRange(at, 1, add.length, 1).setFontWeight('bold');
+  sh.getRange(at, 2, add.length, 1).setBackground('#FFF9E6');
 }
 
 function issuerInfo_(st) {
@@ -110,14 +246,15 @@ function sealDataUrl_(st) {
   return 'data:' + blob.getContentType() + ';base64,' + Utilities.base64Encode(blob.getBytes());
 }
 
-function calcQuote_(data, st) {
+function calcQuote_(data, st, type) {
   const items = (data.items || []).filter(it => it.name && Number(it.qty) && it.price !== '' && it.price !== null);
   if (!data.to) throw new Error('宛名が空です。');
   if (!items.length) throw new Error('品目・数量・単価がそろった行が1つもありません。');
   if (items.length > ITEM_ROWS) throw new Error('品目は' + ITEM_ROWS + '行までです。');
   const issue = data.date ? new Date(data.date + 'T00:00:00+09:00') : new Date();
-  const validDays = Number(st['有効期限(日)']) || 30;
-  const valid = new Date(issue.getTime() + validDays * 86400000);
+  let valid;
+  if (type === 'invoice' && data.due) valid = new Date(data.due + 'T00:00:00+09:00');
+  else valid = new Date(issue.getTime() + (Number(st[DOCS[type || 'quote'].daysKey]) || 30) * 86400000);
   const sum = items.reduce((a, it) => a + Math.round(Number(it.qty) * Number(it.price)), 0);
   const taxMode = data.taxMode === '内税' ? '内税' : '外税';
   let subtotal, tax, total;
@@ -138,6 +275,10 @@ function setup() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   setupSettings_(ss);
   setupLedger_(ss);
+  ensureSettingRows_(ss);
+  ensureLedger_(ss, 'quote');
+  ensureLedger_(ss, 'invoice');
+  ensureDetail_(ss);
   setupTemplate_(ss);
   setupItemChoices_(ss);
   try {
@@ -261,9 +402,9 @@ function getInitData() {
   const ledger = ss.getSheetByName(SHEET_LEDGER);
   // 宛名の候補 = 見積台帳の宛名(新しい順) + 案件管理シートの「商談先」(下の行=新しい順)
   let names = [];
-  if (ledger && ledger.getLastRow() > 1) {
-    names = names.concat(ledger.getRange(2, 3, ledger.getLastRow() - 1, 1).getValues().map(r => r[0]).reverse());
-  }
+  [ledger, ss.getSheetByName(SHEET_INVOICE)].forEach(sh => {
+    if (sh && sh.getLastRow() > 1) names = names.concat(sh.getRange(2, 3, sh.getLastRow() - 1, 1).getValues().map(r => r[0]).reverse());
+  });
   const anken = ss.getSheetByName(SHEET_ANKEN);
   if (anken && anken.getLastRow() > 1) {
     const head = anken.getRange(1, 1, 1, anken.getLastColumn()).getValues()[0];
