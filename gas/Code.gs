@@ -804,7 +804,11 @@ function syncViewMenu() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   ensureSettingRows_(ss);
   const url = syncView_(ss, readSettings_(ss));
-  SpreadsheetApp.getUi().alert('閲覧用ファイルに反映しました。\n' + url);
+  try {
+    SpreadsheetApp.getUi().alert('閲覧用ファイルに反映しました。\n' + url);
+  } catch (e) {
+    Logger.log('閲覧用ファイルに反映しました。' + url); // エディタから実行したとき
+  }
 }
 
 // 閲覧用ファイルに「公開する列」だけを書き写す。値と表示形式だけを写し、数式・入力規則は持ち込まない
