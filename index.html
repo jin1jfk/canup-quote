@@ -87,12 +87,12 @@
   #doc table.items td.n { text-align:right; }
   #doc .payrow { display:flex; justify-content:space-between; align-items:flex-start; gap:20px; margin-top:10px; }
   #doc .totals { width:260px; margin:0 0 0 auto; border-collapse:collapse; font-variant-numeric:tabular-nums; }
-  #doc .bank { width:340px; }
-  #doc .bank table { width:100%; border-collapse:collapse; font-size:12px; }
-  #doc .bank th { background:#1F3864; color:#fff; font-weight:500; text-align:left; padding:4px 8px; font-size:12px; }
-  #doc .bank td { border:1px solid #bbb; padding:4px 8px; }
-  #doc .bank td:first-child { background:#f3f5f8; width:88px; color:#333; }
-  #doc .bank .ask { font-size:11px; color:#333; margin-top:5px; line-height:1.5; }
+  #doc .bank { width:360px; }
+  #doc .bank table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }
+  #doc .bank td { border:1px solid #bbb; padding:4px 10px; }
+  #doc .bank td.h { background:#e6ebf3; font-weight:700; width:78px; text-align:center; vertical-align:middle; letter-spacing:.08em; }
+  #doc .bank td.acct { font-weight:700; letter-spacing:.04em; }
+  #doc .bank .ask { font-size:11px; color:#555; margin-top:6px; line-height:1.6; }
   #doc .totals td { border:1px solid #bbb; padding:4px 8px; }
   #doc .totals td:first-child { background:#f3f5f8; width:120px; }
   #doc .totals td:last-child { text-align:right; }
@@ -449,12 +449,14 @@ function setDocType(t) {
 }
 
 function bankHtml(text, withAsk) {
+  // 合計表と同じ3行の高さにそろえる。1行目=銀行と支店、2行目=種別と番号、3行目=名義
   const p = String(text).trim().split(/\s+/);
   const rows = p.length >= 5
-    ? [['銀行名', p[0]], ['支店名', p[1]], ['口座', p[2] + ' ' + p[3]], ['口座名義', p.slice(4).join(' ')]]
-    : [['振込先', String(text)]];
-  return '<table><tr><th colspan="2">お振込先</th></tr>' +
-    rows.map(r => '<tr><td>' + esc(r[0]) + '</td><td>' + esc(r[1]) + '</td></tr>').join('') + '</table>' +
+    ? [[p[0] + '\u3000' + p[1], ''], [p[2] + '\u3000' + p[3], 'acct'], ['口座名義\u3000' + p.slice(4).join(' '), '']]
+    : [[String(text), '']];
+  return '<table>' + rows.map((r, i) =>
+      '<tr>' + (i === 0 ? '<td class="h" rowspan="' + rows.length + '">お振込先</td>' : '') +
+      '<td' + (r[1] ? ' class="' + r[1] + '"' : '') + '>' + esc(r[0]) + '</td></tr>').join('') + '</table>' +
     (withAsk ? '<div class="ask">お手数ですが、お支払いは上記口座へ<br>お振込下さいますようお願い申し上げます。</div>' : '');
 }
 
