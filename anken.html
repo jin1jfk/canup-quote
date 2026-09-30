@@ -141,7 +141,7 @@
 <main>
   <section class="panel" id="setup">
     <h2>最初に1回だけ</h2>
-    <p class="hint" style="margin:0 0 10px">中村さんから届いた「案件管理」のリンクを開くと、ここは自動で済みます。手で入れる場合は、合言葉を貼り付けて「つなぐ」を押してください。</p>
+    <p class="hint" style="margin:0 0 10px">中村さんから届いたリンクを開くと、ここは自動で済みます。手で入れる場合は、合言葉を貼り付けて「つなぐ」を押してください。</p>
     <input id="apiKey" autocomplete="off" placeholder="合言葉">
     <button class="btn main wide" type="button" style="margin-top:12px" onclick="saveSetup()">つなぐ</button>
     <details style="margin-top:12px"><summary class="hint">接続先URLを変える(通常は不要)</summary>
@@ -170,7 +170,8 @@
 <script>
 // 接続先は見積書アプリと同じ Apps Script。合言葉は担当者用と管理者用の2種類で、担当者用では公開する列だけが届く
 const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbyuCVj4OsMXzrhF6AFxGG8uQGFj887OGhWDpVW3EY_5_b2gUiDmhtoX-dPo_h-rneO1/exec';
-const LS = { url:'canupQuote.apiUrl', key:'canupAnken.apiKey', quoteKey:'canupQuote.apiKey', filter:'canupAnken.filter2' };
+// 合言葉は見積書の画面と同じ場所に保存する(どちらかで1回つなげば両方使える)
+const LS = { url:'canupQuote.apiUrl', key:'canupQuote.apiKey', oldKey:'canupAnken.apiKey', filter:'canupAnken.filter2' };
 const ALERTS = { '期限超過・未確認':'over', '7日以内':'d7', '14日以内':'d14', '確認済':'done' };
 const ALERT_ORDER = { over:0, d7:1, d14:2 };
 const TABS = [['todo', '要対応'], ['受注', '受注'], ['提案中', '提案中'], ['all', 'すべて']];
@@ -201,7 +202,7 @@ let confirmRow = 0;  // 「入金を確認」を押して確認待ちの行
 })();
 
 // ---------- 通信 ----------
-function apiKey() { return lsGet(LS.key) || lsGet(LS.quoteKey); }
+function apiKey() { return lsGet(LS.key) || lsGet(LS.oldKey); }
 async function api(action, payload) {
   const url = lsGet(LS.url) || DEFAULT_API_URL;
   if (!apiKey()) throw new Error('まだつながっていません。中村さんから届いたリンクを開き直してください。');

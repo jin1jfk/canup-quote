@@ -256,6 +256,13 @@ const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbyuCVj4OsMXzrhF
 const MAX_ITEMS = 15;
 const MIN_ROWS = 10;
 const LS = { url:'canupQuote.apiUrl', key:'canupQuote.apiKey', draft:'canupQuote.draft' };
+// リンクの #k=合言葉 を受け取って保存し、アドレス欄から消す(案件管理の画面と共通の保存先)
+(function takeKeyFromLink() {
+  const m = location.hash.match(/[#&]k=([^&]+)/);
+  if (!m) return;
+  try { localStorage.setItem(LS.key, decodeURIComponent(m[1])); } catch (e) {}
+  history.replaceState(null, '', location.pathname + location.search);
+})();
 const DOC = {
   quote:   { label:'見積書', title:'御見積書', lead:'下記のとおりお見積り申し上げます。', amount:'御見積金額', noLabel:'見積番号', limit:'有効期限',
              hint:'発行すると見積番号が振られ、PDFがこの端末にダウンロードされます。同じPDFがDriveの「Canup見積書」フォルダに、内容は「見積台帳」「発行明細」シートにたまります。' },

@@ -69,14 +69,13 @@ function doPost(e) {
     const body = JSON.parse(e.postData.contents);
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const st = readSettings_(ss);
-    // 合言葉は2種類。管理者=見積書・請求書と案件管理の全列 / 担当=案件管理の「公開する列」だけ
+    // 合言葉は2種類。管理者=案件管理の全列 / 担当=案件管理の「公開する列」だけ。見積書・請求書はどちらでも出せる(普段使うのは担当)
     const adminKey = String(st['アプリの合言葉'] || '');
     const staffKey = String(st['案件_担当の合言葉'] || '');
     let role = '';
     if (adminKey && body.key === adminKey) role = 'admin';
     else if (staffKey && body.key === staffKey) role = 'staff';
     if (!role) throw new Error('合言葉が違います。スプレッドシートの「設定」シートにある合言葉を入れ直してください。');
-    if (role === 'staff' && ['ankenList', 'ankenSave'].indexOf(body.action) < 0) throw new Error('この合言葉では案件管理だけ使えます。');
     if (body.action === 'init') out = apiInit_(ss, st);
     else if (body.action === 'issue') out = apiIssue_(ss, st, body.data || {});
     else if (body.action === 'attachPdf') out = apiAttachPdf_(ss, st, body);
@@ -271,7 +270,7 @@ function ensureSettingRows_(ss) {
     ['志_印影ファイルID', '', '角印(背景透過PNG)のDriveファイルID。空欄でも「志_印影_見積用.png」という名前の画像がDriveにあれば自動で押す'],
     ['志_見積番号の頭', 'KQ', '志の見積番号 = 頭-YYMMDD-連番(Canupとは別の連番)'],
     ['志_請求番号の頭', 'KINV', '志の請求番号 = 頭-YYMMDD-連番(Canupとは別の連番)'],
-    ['案件_担当の合言葉', Utilities.getUuid().replace(/-/g, ''), '案件管理アプリの担当者用。見積書・請求書は出せず、「公開する列」だけ見る・直せる。変えると担当者の端末で入れ直し'],
+    ['案件_担当の合言葉', Utilities.getUuid().replace(/-/g, ''), '担当者用。見積書・請求書は出せる。案件管理は「公開する列」だけ見る・直せる。変えると担当者の端末で入れ直し'],
     ['公開する列', PUBLIC_COLS_DEFAULT.join(','), '閲覧用ファイルと担当者用の画面に出す「物件管理」の列(カンマ区切り)。ここに無い列は原本にだけ残り、管理者の画面でだけ見える'],
     ['閲覧用ファイルID', '', '社内共有用の閲覧専用ファイル。空欄なら初回にこのファイルと同じフォルダに作る。共有はこのファイルだけにする'],
     ['閲覧用の最終反映', '', '自動で入る。日付が変わって最初に案件管理を開いたときにも反映し直す(支払アラートの日付計算のため)'],
