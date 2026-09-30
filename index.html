@@ -104,6 +104,24 @@
   @media (max-width:900px) {
     .wrap { grid-template-columns:1fr; }
   }
+  /* スマホ: 入力欄は16px以上(iPhoneが勝手に拡大しないように)・押す場所を大きく・2列を1列に */
+  @media (max-width:640px) {
+    .wrap { padding:12px; gap:14px; }
+    input, select, textarea { font-size:16px; padding:11px 12px; }
+    .two { grid-template-columns:1fr; }
+    .seg button { font-size:15px; padding:11px 0; }
+    .item .r2 { grid-template-columns:62px 56px 1fr; }
+    .item .amt { grid-column:1 / -1; min-width:0; font-weight:700; }
+    .linkbtn.del { padding:10px 6px; font-size:14px; }
+    .add { padding:12px; font-size:15px; }
+    .issue { padding:16px; font-size:17px; }
+    header.bar button { padding:8px 12px; }
+  }
+  /* 発行後に出るボタン(PDFを送る・開く) */
+  .after { display:grid; gap:8px; margin-top:10px; }
+  .after[hidden] { display:none; }
+  .after .send { width:100%; padding:14px; background:#1d6b3a; color:#fff; border:0; border-radius:3px; font:inherit; font-size:16px; font-weight:700; cursor:pointer; }
+  .after a.open { display:block; text-align:center; padding:12px; border:1px solid var(--line); border-radius:3px; color:var(--navy); font-weight:700; text-decoration:none; background:#fff; }
   /* 見積書と案件管理の行き来(両方のページで同じ見た目) */
   nav.apps { display:grid; grid-template-columns:1fr 1fr; background:#1F3864; }
   nav.apps a { display:block; text-align:center; padding:12px 8px; color:#c9d3e3; text-decoration:none; font-size:16px; font-weight:500; border-bottom:4px solid transparent; }
@@ -116,18 +134,17 @@
 <header class="bar">
   <h1>Canup・志 見積書・請求書</h1>
   <span class="who" id="who">未接続</span>
-  <button class="plain" type="button" onclick="toggleSetup()">接続設定</button>
 </header>
 
 <div class="wrap">
   <div>
     <section class="panel" id="setup">
-      <h2>接続設定(この端末で最初に1回)</h2>
+      <h2>つながりませんでした</h2>
       <label for="apiUrl">スプレッドシート側のURL</label>
       <input id="apiUrl" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off">
       <label for="apiKey">合言葉</label>
       <input id="apiKey" autocomplete="off">
-      <p class="hint">合言葉はスプレッドシート「株式会社Canup_物件管理リスト」の「設定」シートにあります。入れた内容はこの端末のブラウザにだけ保存されます。</p>
+      <p class="hint">中村さんから届いたリンクを開き直すと直ります。手で入れる場合は、合言葉を入れて下のボタンを押してください。</p>
       <button class="plain" type="button" style="margin-top:10px" onclick="saveSetup()">保存して接続を確認</button>
       <div class="msg" id="setupMsg"></div>
     </section>
@@ -199,6 +216,7 @@
       <textarea id="note" placeholder="例: 作業日は別途ご相談。駐車場代は実費。"></textarea>
       <button class="issue" id="issueBtn" type="button" onclick="issue()">見積書を発行(PDF)</button>
       <div class="msg" id="msg"></div>
+      <div class="after" id="after" hidden></div>
       <p class="hint" id="issueHint"></p>
       <div class="saved"><span id="savedAt"></span> <button class="linkbtn" type="button" onclick="clearForm()">入力をすべて消す</button></div>
     </section>
@@ -265,9 +283,9 @@ const LS = { url:'canupQuote.apiUrl', key:'canupQuote.apiKey', draft:'canupQuote
 })();
 const DOC = {
   quote:   { label:'見積書', title:'御見積書', lead:'下記のとおりお見積り申し上げます。', amount:'御見積金額', noLabel:'見積番号', limit:'有効期限',
-             hint:'発行すると見積番号が振られ、PDFがこの端末にダウンロードされます。同じPDFがDriveの「Canup見積書」フォルダに、内容は「見積台帳」「発行明細」シートにたまります。' },
+             hint:'発行すると見積番号が振られ、PDFがDriveの「Canup見積書」フォルダに保存されます。スマホでは発行のあと「PDFを送る」でLINEやメールに送れます。' },
   invoice: { label:'請求書', title:'御請求書', lead:'下記のとおりご請求申し上げます。', amount:'ご請求金額', noLabel:'請求番号', limit:'お支払期限',
-             hint:'発行すると請求番号が振られ、PDFがこの端末にダウンロードされます。同じPDFがDriveの「Canup見積書」フォルダに、内容は「請求台帳」「発行明細」シートにたまります。' }
+             hint:'発行すると請求番号が振られ、PDFがDriveの「Canup見積書」フォルダに保存されます。スマホでは発行のあと「PDFを送る」でLINEやメールに送れます。' }
 };
 
 const $ = id => document.getElementById(id);
@@ -518,13 +536,16 @@ async function connect(showOk) {
     if (!(init.recipients || []).length && toMode === 'list') setToMode('new');
     if (keep) { $('to').value = keep; $('honorific').value = keepHon; syncPick(); }
     if (!init.ready) setMsg('msg', 'スプレッドシートの初期設定がまだです。「見積書」メニューから「初期設定」を実行してください。', 'err');
+    if ($('msg').classList.contains('err')) setMsg('msg', '');
+    $('setup').classList.remove('show');
     if (showOk) setMsg('setupMsg', '接続できました。', 'ok');
     render();
     return true;
   } catch (e) {
     $('who').textContent = '未接続';
     setMsg(showOk ? 'setupMsg' : 'msg', e.message, 'err');
-    if (!apiUrl() || !lsGet(LS.key)) $('setup').classList.add('show');
+    // つながらないときだけ入力欄を出す(ふだんはリンクを開くだけでつながるので、ボタンは置かない)
+    if (!apiUrl() || !lsGet(LS.key) || /合言葉/.test(e.message)) $('setup').classList.add('show');
     return false;
   }
 }
@@ -566,11 +587,6 @@ function fillHistory(arr) {
     o.textContent = h.no + '  ' + (h.issuerKey === 'kokorozashi' ? '志 ' : '') + (h.type === 'invoice' ? '請求' : '見積') + '  ' + h.to + (h.subject ? '  ' + h.subject : '') + '  ¥' + yen(h.total);
     sel.appendChild(o);
   });
-}
-
-function toggleSetup() {
-  $('apiUrl').value = apiUrl(); $('apiKey').value = lsGet(LS.key);
-  $('setup').classList.toggle('show');
 }
 
 async function saveSetup() {
@@ -622,11 +638,13 @@ async function issue() {
     setMsg('msg', issued.no + ' のPDFを作っています...', '');
     const pdf = await makePdf();
     const fileName = issued.no + '_' + data.to.replace(/[\\\/:*?"<>|\s]+/g, '_').slice(0, 40) + '_' + D.label + '.pdf';
-    pdf.save(fileName);
-    setMsg('msg', issued.no + ' をダウンロードしました。Driveに保存しています...', '');
+    // 先にDriveへ保存する(スマホはダウンロードで画面が切り替わることがあるため)
+    setMsg('msg', issued.no + ' をDriveに保存しています...', '');
     const b64 = pdf.output('datauristring').split(',')[1];
     const saved = await api('attachPdf', { no: issued.no, pdf: b64 });
-    setMsg('msg', issued.no + ' を発行しました(合計 ¥' + yen(issued.total) + ')。', 'ok', { href: saved.url, text: 'Driveで開く' });
+    if (!isPhone()) pdf.save(fileName);
+    setMsg('msg', issued.no + ' を発行しました(合計 ¥' + yen(issued.total) + ')。' + (isPhone() ? '' : 'PDFはダウンロードしました。'), 'ok');
+    showAfter(new File([pdf.output('blob')], fileName, { type: 'application/pdf' }), saved.url);
     $('issueBtn').textContent = '続けて別の書類を作る';
     $('issueBtn').dataset.done = '1';
     $('issueBtn').onclick = clearForm;
@@ -641,7 +659,31 @@ async function issue() {
   }
 }
 
+// スマホかどうか(指で操作する画面)
+function isPhone() { try { return matchMedia('(pointer: coarse)').matches; } catch (e) { return false; } }
+
+// 発行後: スマホは「LINE・メールで送る」、どちらも「PDFを開く」を出す
+function showAfter(file, driveUrl) {
+  const box = $('after');
+  box.innerHTML = '';
+  let canShare = false;
+  try { canShare = isPhone() && !!(navigator.canShare && navigator.canShare({ files: [file] })); } catch (e) {}
+  if (canShare) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'send'; b.textContent = 'PDFを送る(LINE・メールなど)';
+    b.onclick = async () => { try { await navigator.share({ files: [file], title: file.name }); } catch (e) { /* 送る画面を閉じただけ */ } };
+    box.appendChild(b);
+  }
+  const a = document.createElement('a');
+  a.className = 'open'; a.target = '_blank'; a.rel = 'noopener';
+  a.href = driveUrl || URL.createObjectURL(file);
+  a.textContent = 'PDFを開く';
+  box.appendChild(a);
+  box.hidden = false;
+}
+
 function resetForm() {
+  $('after').hidden = true; $('after').innerHTML = '';
   ['to','subject','note'].forEach(id => $(id).value = '');
   setToMode(toMode);
   $('items').innerHTML = ''; addItem();

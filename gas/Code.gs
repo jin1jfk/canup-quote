@@ -710,7 +710,7 @@ function apiAnkenList_(ss, st, role) {
   return {
     role, fields: show.map(c => Object.assign({ public: pub.indexOf(L.fields[c].name) >= 0 }, L.fields[c])),
     rows, today,
-    viewUrl: role === 'admin' ? (viewUrl || (id ? 'https://docs.google.com/spreadsheets/d/' + id + '/edit' : '')) : '',
+    viewUrl: viewUrl || (id ? 'https://docs.google.com/spreadsheets/d/' + id + '/edit' : ''), // 閲覧用は社内共有用なので担当にも渡す
   };
 }
 
