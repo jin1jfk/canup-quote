@@ -835,12 +835,19 @@ function syncView_(ss, st) {
 
   const srcRows = [];
   const srcFmts = [];
+  const srcGroups = [];
   if (L.end >= L.start) {
     const nfs = L.sh.getRange(L.start, 1, L.end - L.start + 1, L.width).getNumberFormats();
-    L.vals.forEach((r, i) => {
-      if (String(r[L.nameIdx]).trim() === '') return;
+    // 並び: 対応中 → 入金済み → 失注(同じ組の中は原本の順)。原本の行は動かさない(アプリは行番号で案件を見分けるため)
+    const payC = L.head.indexOf('支払確認'), stC = L.head.indexOf('受注状況');
+    const group = r => stC >= 0 && r[stC] === '失注' ? 2 : payC >= 0 && r[payC] === true ? 1 : 0;
+    const picked = [];
+    L.vals.forEach((r, i) => { if (String(r[L.nameIdx]).trim() !== '') picked.push({ r, i, g: group(r) }); });
+    picked.sort((a, b) => a.g - b.g || a.i - b.i);
+    picked.forEach(({ r, i, g }) => {
       srcRows.push(cols.map(c => L.fields[c].type === 'check' ? (r[c] === true ? '済' : r[c] === false ? '未' : '') : r[c]));
       srcFmts.push(cols.map(c => L.fields[c].type === 'check' ? '@' : nfs[i][c]));
+      srcGroups.push(g);
     });
   }
   const w = cols.length;
@@ -856,11 +863,11 @@ function syncView_(ss, st) {
       .setBorder(true, true, true, true, true, true, '#D8DDE3', SpreadsheetApp.BorderStyle.SOLID);
     // 色: 支払アラートの意味ごと / 失注の行はグレー
     const aIdx = cols.findIndex(c => L.fields[c].name === '支払アラート');
-    const sIdx = cols.findIndex(c => L.fields[c].name === '受注状況');
     const bg = srcRows.map(r => r.map(() => '#FFFFFF'));
     const fc = srcRows.map(r => r.map(() => '#1B1F24'));
     srcRows.forEach((r, i) => {
-      if (sIdx >= 0 && r[sIdx] === '失注') { fc[i] = fc[i].map(() => '#9AA1A9'); return; }
+      if (srcGroups[i] === 2) { fc[i] = fc[i].map(() => '#9AA1A9'); return; }
+      if (srcGroups[i] === 1) fc[i] = fc[i].map(() => '#6B737D'); // 入金済みは文字を薄く
       const col = aIdx >= 0 ? ALERT_COLORS[String(r[aIdx])] : null;
       if (col) { bg[i][aIdx] = col[0]; if (col[1]) fc[i][aIdx] = col[1]; }
     });

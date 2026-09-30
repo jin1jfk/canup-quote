@@ -61,7 +61,8 @@
   /* 一覧 */
   .list { display:grid; gap:10px; }
   .card { background:var(--bg); border:1px solid var(--line); border-radius:6px; padding:14px 16px; }
-  .card.lost { background:#f7f8fa; }
+  .card.lost, .card.paid { background:#f7f8fa; }
+  .card.paid .nm, .card.paid .amt { color:var(--sub); font-weight:500; }
   .card .top { display:flex; gap:12px; align-items:flex-start; cursor:pointer; }
   .card .nm { font-weight:700; font-size:18px; flex:1; line-height:1.45; }
   .card.lost .nm { color:var(--faint); font-weight:500; }
@@ -253,8 +254,10 @@ function draw() {
 
   const q = $('q').value.trim();
   const rows = data.rows.filter(r => inTab(r, tab) && (!q || String(r.v['物件名']).indexOf(q) >= 0 || String(r.v['備考'] || '').indexOf(q) >= 0));
-  // 並び: 遅れている順 → 入金予定日の近い順 → 番号
+  // 並び: 対応中 → 入金済み → 失注。対応中の中は遅れている順 → 入金予定日の近い順 → 番号
+  const grp = r => r.v['受注状況'] === '失注' ? 2 : r.v['支払確認'] === true ? 1 : 0;
   rows.sort((a, b) => {
+    if (grp(a) !== grp(b)) return grp(a) - grp(b);
     const x = ALERT_ORDER[alertCls(a)] ?? 9, y = ALERT_ORDER[alertCls(b)] ?? 9;
     if (x !== y) return x - y;
     const da = a.v['支払い予定日'] || '9999', db = b.v['支払い予定日'] || '9999';
@@ -284,7 +287,7 @@ function draw() {
       else if (r.v['支払確認'] === true) act += '<span class="chip done">入金確認済み</span>';
     }
     act += '<button class="btn edit" type="button" data-edit="' + r.row + '">直す</button>';
-    return '<div class="card' + (st === '失注' ? ' lost' : '') + '">' +
+    return '<div class="card' + (st === '失注' ? ' lost' : r.v['支払確認'] === true ? ' paid' : '') + '">' +
       '<div class="top" data-edit="' + r.row + '"><div class="nm">' + esc(r.v['物件名']) + '</div><div class="amt">' + (money ? esc(yen(r.v[money])) : '') + '</div></div>' +
       '<div class="sub">' + sub + '</div>' +
       '<div class="act">' + act + '</div></div>';
