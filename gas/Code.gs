@@ -874,7 +874,7 @@ function syncView_(ss, st) {
   GROUPS.forEach((G, g) => {
     const members = srcRows.map((row, i) => ({ row, fmt: srcFmts[i], g: srcGroups[i] })).filter(x => x.g === g);
     if (!members.length) return;
-    // 見出し行は結合しない(物件名の列を固定しているため、結合すると固定できない)。文字は物件名の列に置く
+    // 見出し行の文字は物件名の列に置く(左端のNo列は狭く、文字が切れるため)
     sh.getRange(r0, 1, 1, w).setBackground(G[1]).setFontWeight('bold').setFontSize(12).setFontColor('#1F3864').setVerticalAlignment('middle');
     sh.getRange(r0, Math.max(idx('物件名'), 0) + 1).setValue('■ ' + G[0] + '　' + members.length + '件');
     sh.setRowHeight(r0, 30);
@@ -906,7 +906,7 @@ function syncView_(ss, st) {
     r0 += n;
   });
   sh.setFrozenRows(3);
-  sh.setFrozenColumns(Math.max(idx('物件名') + 1, 0));
+  sh.setFrozenColumns(0);
   cols.forEach((c, i) => {
     const t = type(c), n = name(c);
     sh.setColumnWidth(i + 1, n === '物件名' ? 230 : n === '備考' ? 380 : n === 'No' ? 44 : n === '支払アラート' ? 136 : n === '支払確認' ? 72 : n === '担当者' ? 72 : t === 'money' || n === '業務委託料' ? 112 : t === 'date' ? 108 : 96);
