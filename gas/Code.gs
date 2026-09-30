@@ -98,7 +98,16 @@ function issuerInfo_(st) {
   return {
     company: st['社名'] || '', zip: st['郵便番号'] || '', address: st['住所'] || '',
     tel: st['電話'] || '', mail: st['メール'] || '', regNo: st['登録番号'] || '', bank: st['振込先'] || '',
+    seal: sealDataUrl_(st),
   };
+}
+
+// 印影はリポジトリに置かず、Driveの画像を合言葉つきのAPIでだけ渡す
+function sealDataUrl_(st) {
+  const id = String(st['印影ファイルID'] || '').trim();
+  if (!id) return '';
+  const blob = DriveApp.getFileById(id).getBlob();
+  return 'data:' + blob.getContentType() + ';base64,' + Utilities.base64Encode(blob.getBytes());
 }
 
 function calcQuote_(data, st) {
@@ -155,6 +164,7 @@ function setupSettings_(ss) {
     ['有効期限(日)', 30, '発行日からの日数'],
     ['見積番号の頭', 'Q', '見積番号 = 頭-YYMMDD-連番'],
     ['保存フォルダID', '', '空欄なら初回作成時にマイドライブに「Canup見積書」フォルダを作って自動で入る'],
+    ['印影ファイルID', '', '見積書に押す印影(背景透過PNG)のDriveファイルID。空欄なら押さない'],
     ['アプリの合言葉', Utilities.getUuid().replace(/-/g, '').slice(0, 12), 'Web版アプリに1回だけ入力する。他人に教えない。変えると全端末で入れ直し'],
   ];
   sh.getRange(1, 1, rows.length, 3).setValues(rows);
