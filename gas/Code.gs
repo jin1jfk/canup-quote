@@ -131,7 +131,12 @@ function setup() {
   setupLedger_(ss);
   setupTemplate_(ss);
   setupItemChoices_(ss);
-  SpreadsheetApp.getUi().alert('初期設定が終わりました。「設定」シートの空欄(電話・メール・登録番号・振込先)を埋めてください。');
+  try {
+    SpreadsheetApp.getUi().alert('初期設定が終わりました。「設定」シートの空欄(電話・メール・登録番号・振込先)を埋めてください。');
+  } catch (e) {
+    // エディタから実行したときは画面が無いので記録だけ残す
+    Logger.log('初期設定が終わりました。');
+  }
 }
 
 function setupSettings_(ss) {
