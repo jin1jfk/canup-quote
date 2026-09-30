@@ -30,6 +30,11 @@
   textarea { min-height:64px; resize:vertical; }
   .two { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
   .to { display:grid; grid-template-columns:1fr 92px; gap:8px; }
+  .to [hidden] { display:none; }
+  .seg { display:grid; grid-template-columns:1fr 1fr; border:1px solid var(--line); border-radius:3px; overflow:hidden; margin-bottom:8px; }
+  .seg button { font:inherit; font-size:13px; padding:7px 0; border:0; background:#fff; color:var(--sub); cursor:pointer; }
+  .seg button + button { border-left:1px solid var(--line); }
+  .seg button.on { background:var(--navy); color:#fff; font-weight:700; }
   .item { border-top:1px solid var(--line); padding:10px 0 4px; }
   .item:first-child { border-top:0; padding-top:0; }
   .item .r1 { display:grid; grid-template-columns:1fr auto; gap:8px; }
@@ -114,14 +119,17 @@
 
     <section class="panel">
       <h2>宛先と件名</h2>
-      <label for="toPick">会社一覧から選ぶ</label>
-      <select id="toPick"><option value="">(接続すると案件管理シートの会社が並びます)</option></select>
-      <label for="to">宛名</label>
-      <div class="to">
-        <input id="to" list="toList" autocomplete="off" placeholder="例: ○○不動産株式会社">
-        <select id="honorific"><option>御中</option><option>様</option></select>
+      <label>宛名</label>
+      <div class="seg" role="tablist">
+        <button type="button" id="modeList" class="on" onclick="setToMode('list')">一覧から選ぶ</button>
+        <button type="button" id="modeNew" onclick="setToMode('new')">新規に入力</button>
       </div>
-      <datalist id="toList"></datalist>
+      <div class="to">
+        <select id="toPick" aria-label="宛名(一覧)"><option value="">(接続すると会社が並びます)</option></select>
+        <input id="to" autocomplete="off" placeholder="例: ○○不動産株式会社" aria-label="宛名(新規)" hidden>
+        <select id="honorific" aria-label="敬称"><option>御中</option><option>様</option></select>
+      </div>
+      <p class="hint" id="toHint">案件管理シートの商談先と、過去に見積書を出した宛名が並びます。</p>
       <label for="subject">件名</label>
       <input id="subject" placeholder="例: 残置物回収一式">
       <div class="two">
@@ -354,8 +362,9 @@ async function connect(showOk) {
     const init = await api('init');
     issuer = init.issuer; validDays = init.validDays || 30;
     $('who').textContent = '発行元: ' + (issuer.company || '(社名未設定)');
-    fillList('toList', init.recipients); fillList('itemList', init.items);
+    fillList('itemList', init.items);
     fillPick(init.recipients);
+    if (!(init.recipients || []).length) setToMode('new');
     if (!init.ready) setMsg('msg', 'スプレッドシートの初期設定がまだです。「見積書」メニューから「初期設定」を実行してください。', 'err');
     if (showOk) setMsg('setupMsg', '接続できました。', 'ok');
     render();
@@ -377,6 +386,24 @@ function fillPick(arr) {
   const sel = $('toPick');
   sel.innerHTML = '<option value="">' + ((arr && arr.length) ? '選んでください(' + arr.length + '社)' : '一覧はまだ空です') + '</option>';
   (arr || []).forEach(v => { const o = document.createElement('option'); o.value = v; o.textContent = v; sel.appendChild(o); });
+}
+
+// 宛名: 一覧から選ぶ / 新規に入力。どちらでも実際の値は #to に入る
+let toMode = 'list';
+function setToMode(mode) {
+  toMode = mode;
+  const isNew = mode === 'new';
+  $('modeList').classList.toggle('on', !isNew);
+  $('modeNew').classList.toggle('on', isNew);
+  $('toPick').hidden = isNew;
+  $('to').hidden = !isNew;
+  $('toHint').textContent = isNew
+    ? '一覧にない宛名を入れます。発行すると見積台帳に記録され、次回から一覧に並びます。'
+    : '案件管理シートの商談先と、過去に見積書を出した宛名が並びます。';
+  $('to').value = '';
+  $('toPick').value = '';
+  if (isNew) $('to').focus();
+  render();
 }
 
 function toggleSetup() {
@@ -416,7 +443,7 @@ async function issue() {
     to: $('to').value.trim(), honorific: $('honorific').value, subject: $('subject').value.trim(),
     date: $('date').value, taxMode: $('taxMode').value, note: $('note').value.trim(), items: readItems()
   };
-  if (!data.to) return setMsg('msg', '宛名が空です。', 'err');
+  if (!data.to) return setMsg('msg', toMode === 'new' ? '宛名を入れてください。' : '宛名を一覧から選んでください(一覧にない場合は「新規に入力」)。', 'err');
   if (!data.items.some(i => i.name && Number(i.qty) && i.price !== '')) return setMsg('msg', '品目・数量・単価がそろった行を1つ以上入れてください。', 'err');
   if (!issuer && !(await connect(false))) return;
 
@@ -447,6 +474,7 @@ async function issue() {
 
 function resetForm() {
   ['to','subject','note'].forEach(id => $(id).value = '');
+  setToMode(toMode);
   $('items').innerHTML = ''; addItem();
   $('issueBtn').textContent = '見積書を発行(PDF)';
   $('issueBtn').onclick = issue;
@@ -457,8 +485,8 @@ function resetForm() {
 // ---------- 起動 ----------
 ['to','honorific','subject','date','taxMode','note'].forEach(id => $(id).addEventListener('input', () => render()));
 $('toPick').addEventListener('change', e => {
-  if (!e.target.value) return;
   const v = e.target.value;
+  if (!v) { $('to').value = ''; render(); return; }
   $('to').value = v;
   $('honorific').value = /様$/.test(v) ? '様' : '御中';
   if (/様$/.test(v)) $('to').value = v.replace(/\s*様$/, '');
