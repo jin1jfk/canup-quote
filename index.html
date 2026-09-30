@@ -113,6 +113,8 @@
 
     <section class="panel">
       <h2>宛先と件名</h2>
+      <label for="toPick">会社一覧から選ぶ</label>
+      <select id="toPick"><option value="">(接続すると案件管理シートの会社が並びます)</option></select>
       <label for="to">宛名</label>
       <div class="to">
         <input id="to" list="toList" autocomplete="off" placeholder="例: ○○不動産株式会社">
@@ -351,6 +353,7 @@ async function connect(showOk) {
     issuer = init.issuer; validDays = init.validDays || 30;
     $('who').textContent = '発行元: ' + (issuer.company || '(社名未設定)');
     fillList('toList', init.recipients); fillList('itemList', init.items);
+    fillPick(init.recipients);
     if (!init.ready) setMsg('msg', 'スプレッドシートの初期設定がまだです。「見積書」メニューから「初期設定」を実行してください。', 'err');
     if (showOk) setMsg('setupMsg', '接続できました。', 'ok');
     render();
@@ -366,6 +369,12 @@ async function connect(showOk) {
 function fillList(id, arr) {
   const dl = $(id); dl.innerHTML = '';
   (arr || []).forEach(v => { const o = document.createElement('option'); o.value = v; dl.appendChild(o); });
+}
+
+function fillPick(arr) {
+  const sel = $('toPick');
+  sel.innerHTML = '<option value="">' + ((arr && arr.length) ? '選んでください(' + arr.length + '社)' : '一覧はまだ空です') + '</option>';
+  (arr || []).forEach(v => { const o = document.createElement('option'); o.value = v; o.textContent = v; sel.appendChild(o); });
 }
 
 function toggleSetup() {
@@ -445,6 +454,14 @@ function resetForm() {
 
 // ---------- 起動 ----------
 ['to','honorific','subject','date','taxMode','note'].forEach(id => $(id).addEventListener('input', () => render()));
+$('toPick').addEventListener('change', e => {
+  if (!e.target.value) return;
+  const v = e.target.value;
+  $('to').value = v;
+  $('honorific').value = /様$/.test(v) ? '様' : '御中';
+  if (/様$/.test(v)) $('to').value = v.replace(/\s*様$/, '');
+  render();
+});
 window.addEventListener('resize', fitPreview);
 (function init() {
   const d = new Date();

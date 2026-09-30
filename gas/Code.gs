@@ -6,6 +6,7 @@ const SHEET_SETTINGS = '設定';
 const SHEET_TEMPLATE = '見積書テンプレ';
 const SHEET_LEDGER = '見積台帳';
 const SHEET_CHOICES = '選択肢';
+const SHEET_ANKEN = '案件管理';
 const ITEM_FIRST_ROW = 15;
 const ITEM_ROWS = 15;
 const TAX_RATE = 0.1;
@@ -243,11 +244,18 @@ function getInitData() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const st = readSettings_(ss);
   const ledger = ss.getSheetByName(SHEET_LEDGER);
-  let recipients = [];
+  // 宛名の候補 = 見積台帳の宛名(新しい順) + 案件管理シートの「商談先」(下の行=新しい順)
+  let names = [];
   if (ledger && ledger.getLastRow() > 1) {
-    recipients = ledger.getRange(2, 3, ledger.getLastRow() - 1, 1).getValues().map(r => r[0]).filter(String);
-    recipients = [...new Set(recipients)].reverse();
+    names = names.concat(ledger.getRange(2, 3, ledger.getLastRow() - 1, 1).getValues().map(r => r[0]).reverse());
   }
+  const anken = ss.getSheetByName(SHEET_ANKEN);
+  if (anken && anken.getLastRow() > 1) {
+    const head = anken.getRange(1, 1, 1, anken.getLastColumn()).getValues()[0];
+    const col = head.indexOf('商談先') + 1;
+    if (col > 0) names = names.concat(anken.getRange(2, col, anken.getLastRow() - 1, 1).getValues().map(r => r[0]).reverse());
+  }
+  const recipients = [...new Set(names.map(v => String(v).trim()).filter(String))];
   const choices = ss.getSheetByName(SHEET_CHOICES);
   let items = [];
   if (choices && choices.getLastRow() > 1) {
