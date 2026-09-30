@@ -547,7 +547,7 @@ function createQuote(data) {
     SpreadsheetApp.flush();
 
     // PDF化して保存
-    const folder = getFolder_(ss, st);
+    const folder = docFolder_(ss, 'quote', 'canup');
     const fileName = no + '_' + safeName_(data.to) + '_見積書.pdf';
     const pdf = exportSheetPdf_(ss, tpl).setName(fileName);
     const file = folder.createFile(pdf);
@@ -610,17 +610,6 @@ function moveIssuedPdfs() {
     });
   });
   Logger.log(moved.length + '件を移動しました\n' + moved.join('\n'));
-}
-
-function getFolder_(ss, st) {
-  const id = st['保存フォルダID'];
-  if (id) return DriveApp.getFolderById(id);
-  const folder = DriveApp.createFolder('Canup見積書');
-  const sh = ss.getSheetByName(SHEET_SETTINGS);
-  const keys = sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues().map(r => r[0]);
-  const row = keys.indexOf('保存フォルダID');
-  if (row >= 0) sh.getRange(row + 2, 2).setValue(folder.getId());
-  return folder;
 }
 
 function exportSheetPdf_(ss, sheet) {
