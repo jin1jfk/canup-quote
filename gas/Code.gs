@@ -153,7 +153,7 @@ function apiAttachPdf_(ss, st, body) {
   if (!hit) throw new Error('台帳に ' + body.no + ' が見つかりません。');
   const blob = Utilities.newBlob(Utilities.base64Decode(body.pdf), 'application/pdf',
     body.no + '_' + safeName_(hit.rec['宛名']) + '_' + DOCS[hit.type].label + '.pdf');
-  const file = getFolder_(ss, st).createFile(blob);
+  const file = docFolder_(ss, hit.type, issuerKeyOf_(hit.rec['発行元'])).createFile(blob);
   hit.sheet.getRange(hit.row, hit.head.indexOf('PDF') + 1).setValue(file.getUrl());
   return { url: file.getUrl() };
 }
@@ -580,6 +580,36 @@ function nextQuoteNo_(ledger, head, date) {
     });
   }
   return prefix + String(n + 1).padStart(2, '0');
+}
+
+// 発行したPDFの置き場: スプレッドシートと同じフォルダ(Canup&志)の下に 会社名/見積書・請求書。無ければ作る
+// (Canupと志は別の会社なので、会社ごと・書類ごとに分ける)
+function docFolder_(ss, type, issuerKey) {
+  const parents = DriveApp.getFileById(ss.getId()).getParents();
+  const base = parents.hasNext() ? parents.next() : DriveApp.getRootFolder();
+  const I = ISSUERS[issuerKey] || ISSUERS.canup;
+  const sub = (folder, name) => { const it = folder.getFoldersByName(name); return it.hasNext() ? it.next() : folder.createFolder(name); };
+  return sub(sub(base, I.name), DOCS[type] ? DOCS[type].label : '見積書');
+}
+
+// 1回だけ使う: 発行済みのPDFを 会社名/見積書・請求書 のフォルダへ移す(台帳のリンクはファイルIDなので変わらない)
+function moveIssuedPdfs() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const moved = [];
+  Object.keys(DOCS).forEach(type => {
+    const sh = ss.getSheetByName(DOCS[type].sheet);
+    if (!sh || sh.getLastRow() < 2) return;
+    const head = headerOf_(sh);
+    const cPdf = head.indexOf('PDF'), cIss = head.indexOf('発行元');
+    sh.getRange(2, 1, sh.getLastRow() - 1, head.length).getValues().forEach(r => {
+      const m = String(r[cPdf] || '').match(/\/d\/([\w-]+)/);
+      if (!m) return;
+      const to = docFolder_(ss, type, issuerKeyOf_(cIss >= 0 ? r[cIss] : ''));
+      DriveApp.getFileById(m[1]).moveTo(to);
+      moved.push(r[0] + ' -> ' + to.getName());
+    });
+  });
+  Logger.log(moved.length + '件を移動しました\n' + moved.join('\n'));
 }
 
 function getFolder_(ss, st) {
