@@ -869,7 +869,7 @@ function syncView_(ss, st) {
   sh.setFrozenRows(3);
   cols.forEach((c, i) => {
     const t = L.fields[c].type, n = L.fields[c].name;
-    sh.setColumnWidth(i + 1, n === '物件名' ? 220 : n === '備考' ? 360 : n === 'No' ? 44 : t === 'money' ? 110 : t === 'date' ? 100 : 92);
+    sh.setColumnWidth(i + 1, n === '物件名' ? 220 : n === '備考' ? 360 : n === 'No' ? 44 : n === '支払アラート' ? 130 : t === 'money' ? 110 : t === 'date' ? 100 : 92);
   });
   const noteIdx = cols.findIndex(c => L.fields[c].name === '備考');
   if (noteIdx >= 0 && srcRows.length) sh.getRange(4, noteIdx + 1, srcRows.length, 1).setWrap(true);
