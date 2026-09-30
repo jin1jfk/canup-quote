@@ -357,7 +357,12 @@ function render(issued) {
   $('dSubLabel').textContent = inTax ? '小計(税抜)' : '小計';
   $('dTaxLabel').textContent = inTax ? 'うち消費税(10%)' : '消費税(10%)';
   $('dSub').textContent = yen(c.subtotal); $('dTax').textContent = yen(c.tax); $('dTotal').textContent = '¥' + yen(c.total);
-  const note = [$('note').value.trim(), iss && iss.bank ? 'お振込先: ' + iss.bank : ''].filter(Boolean).join('\n');
+  // 請求書は振込先に支払期限とお願いの一文を添える(見積書は振込先だけ)
+  const payNote = iss && iss.bank ? (docType === 'invoice'
+    ? ['お振込先: ' + iss.bank, $('dValid').textContent ? 'お支払い期限: ' + $('dValid').textContent + '迄' : '',
+       'お手数ですが、お支払いは上記銀行口座へお振込下さいますようお願い申し上げます。'].filter(Boolean).join('\n')
+    : 'お振込先: ' + iss.bank) : '';
+  const note = [$('note').value.trim(), payNote].filter(Boolean).join('\n');
   $('dNote').textContent = note;
   fitPreview();
   if (!issued) saveDraft();
