@@ -13,9 +13,14 @@ const SHEET_DETAIL = '発行明細';
 // 書類の種類ごとの台帳・番号・期限
 const DOCS = {
   quote: { label: '見積書', sheet: SHEET_LEDGER, noHead: '見積番号', prefixKey: '見積番号の頭', prefixDef: 'Q',
-    daysKey: '有効期限(日)', limitHead: '有効期限', extra: ['敬称', '備考'] },
+    daysKey: '有効期限(日)', limitHead: '有効期限', extra: ['敬称', '備考', '発行元'] },
   invoice: { label: '請求書', sheet: SHEET_INVOICE, noHead: '請求番号', prefixKey: '請求番号の頭', prefixDef: 'INV',
-    daysKey: '支払期限(日)', limitHead: '支払期限', extra: ['敬称', '備考', '元の見積番号', '入金日'] },
+    daysKey: '支払期限(日)', limitHead: '支払期限', extra: ['敬称', '備考', '元の見積番号', '入金日', '発行元'] },
+};
+// 発行元(送り主)。設定シートの項目名は「頭 + 社名」など。Canupは頭なし、志は「志_」
+const ISSUERS = {
+  canup: { name: '株式会社Canup', head: '', quoteDef: 'Q', invoiceDef: 'INV', sealName: 'canup_印影_見積用.png' },
+  kokorozashi: { name: '株式会社志', head: '志_', quoteDef: 'KQ', invoiceDef: 'KINV', sealName: '志_印影_見積用.png' },
 };
 const DETAIL_HEAD = ['書類番号', '種別', '発行日', '宛名', '行', '品目', '数量', '単位', '単価', '金額'];
 const ITEM_FIRST_ROW = 15;
@@ -64,8 +69,11 @@ function apiInit_(ss, st) {
   ensureSettingRows_(ss);
   st = readSettings_(ss);
   const init = getInitData();
+  const issuers = {};
+  Object.keys(ISSUERS).forEach(k => issuers[k] = issuerInfo_(st, k));
   return {
-    issuer: issuerInfo_(st),
+    issuer: issuers.canup,
+    issuers: issuers,
     validDays: init.validDays,
     payDays: Number(st['支払期限(日)']) || 30,
     recipients: init.recipients,
@@ -84,11 +92,15 @@ function apiIssue_(ss, st, data) {
     const ledger = ensureLedger_(ss, type);
     const detail = ensureDetail_(ss);
     const q = calcQuote_(data, st, type);
-    const no = nextQuoteNo_(ledger, st[doc.prefixKey] || doc.prefixDef, q.issue);
+    const ik = ISSUERS[data.issuerKey] ? data.issuerKey : 'canup';
+    const I = ISSUERS[ik];
+    const noHead = st[I.head + doc.prefixKey] || (type === 'invoice' ? I.invoiceDef : I.quoteDef);
+    const no = nextQuoteNo_(ledger, noHead, q.issue);
     const rec = {
       '発行日': q.issue, '宛名': data.to, '件名': data.subject || '', '税区分': q.taxMode,
       '小計': q.subtotal, '消費税': q.tax, '合計': q.total, 'PDF': '(PDF保存待ち)',
       '敬称': data.honorific || '御中', '備考': data.note || '', '元の見積番号': data.fromNo || '',
+      '発行元': issuerInfo_(st, ik).company,
     };
     rec[doc.noHead] = no;
     rec[doc.limitHead] = q.valid;
@@ -103,7 +115,7 @@ function apiIssue_(ss, st, data) {
       issueDate: Utilities.formatDate(q.issue, 'Asia/Tokyo', 'yyyy-MM-dd'),
       validDate: Utilities.formatDate(q.valid, 'Asia/Tokyo', 'yyyy-MM-dd'),
       subtotal: q.subtotal, tax: q.tax, total: q.total,
-      issuer: issuerInfo_(st),
+      issuerKey: ik, issuer: issuerInfo_(st, ik),
     };
   } finally {
     lock.releaseLock();
@@ -135,7 +147,7 @@ function apiLoad_(ss, no) {
       .map(v => ({ name: String(v[5]), qty: v[6], unit: String(v[7]), price: v[8] }));
   }
   return {
-    no: String(no), docType: hit.type, to: String(r['宛名'] || ''), honorific: String(r['敬称'] || '御中'),
+    no: String(no), docType: hit.type, issuerKey: issuerKeyOf_(r['発行元']), to: String(r['宛名'] || ''), honorific: String(r['敬称'] || '御中'),
     subject: String(r['件名'] || ''), taxMode: r['税区分'] === '内税' ? '内税' : '外税', note: String(r['備考'] || ''), items,
   };
 }
@@ -151,7 +163,8 @@ function history_(ss, limit) {
       if (!v[0]) return;
       const d = v[c('発行日')];
       out.push({ no: String(v[0]), type, date: d instanceof Date ? Utilities.formatDate(d, 'Asia/Tokyo', 'yyyy-MM-dd') : String(d),
-        to: String(v[c('宛名')] || ''), subject: String(v[c('件名')] || ''), total: Number(v[c('合計')]) || 0 });
+        to: String(v[c('宛名')] || ''), subject: String(v[c('件名')] || ''), total: Number(v[c('合計')]) || 0,
+        issuerKey: c('発行元') >= 0 ? issuerKeyOf_(v[c('発行元')]) : 'canup' });
     });
   });
   out.sort((a, b) => (b.date + b.no).localeCompare(a.date + a.no));
@@ -222,6 +235,16 @@ function ensureSettingRows_(ss) {
   const add = [
     ['請求番号の頭', 'INV', '請求番号 = 頭-YYMMDD-連番'],
     ['支払期限(日)', 30, '請求書の支払期限の初期値(発行日からの日数)。画面で変えられる'],
+    ['志_社名', '株式会社志', '発行元を「株式会社志」にしたときの社名。以下「志_」の行は志で発行するときだけ使う'],
+    ['志_郵便番号', '', '空欄なら出ない'],
+    ['志_住所', '', '空欄なら出ない(豊中へ移転予定のため未記入)'],
+    ['志_電話', '', '空欄なら出ない'],
+    ['志_メール', '', '空欄なら出ない'],
+    ['志_登録番号', '', 'インボイス登録番号(T+13桁)。空欄なら出ない'],
+    ['志_振込先', '', '備考欄の末尾に載る。空欄なら出ない'],
+    ['志_印影ファイルID', '', '角印(背景透過PNG)のDriveファイルID。空欄でも「志_印影_見積用.png」という名前の画像がDriveにあれば自動で押す'],
+    ['志_見積番号の頭', 'KQ', '志の見積番号 = 頭-YYMMDD-連番(Canupとは別の連番)'],
+    ['志_請求番号の頭', 'KINV', '志の請求番号 = 頭-YYMMDD-連番(Canupとは別の連番)'],
   ].filter(r => keys.indexOf(r[0]) < 0);
   if (!add.length) return;
   const at = sh.getLastRow() + 1;
@@ -230,19 +253,34 @@ function ensureSettingRows_(ss) {
   sh.getRange(at, 2, add.length, 1).setBackground('#FFF9E6');
 }
 
-function issuerInfo_(st) {
+function issuerInfo_(st, key) {
+  const I = ISSUERS[key] || ISSUERS.canup;
+  const g = k => st[I.head + k] || '';
   return {
-    company: st['社名'] || '', zip: st['郵便番号'] || '', address: st['住所'] || '',
-    tel: st['電話'] || '', mail: st['メール'] || '', regNo: st['登録番号'] || '', bank: st['振込先'] || '',
-    seal: sealDataUrl_(st),
+    key: ISSUERS[key] ? key : 'canup',
+    company: g('社名') || I.name, zip: g('郵便番号'), address: g('住所'),
+    tel: g('電話'), mail: g('メール'), regNo: g('登録番号'), bank: g('振込先'),
+    seal: sealDataUrl_(g('印影ファイルID'), I.sealName),
   };
 }
 
-// 印影はリポジトリに置かず、Driveの画像を合言葉つきのAPIでだけ渡す
-function sealDataUrl_(st) {
-  const id = String(st['印影ファイルID'] || '').trim();
-  if (!id) return '';
-  const blob = DriveApp.getFileById(id).getBlob();
+function issuerKeyOf_(company) {
+  const c = String(company || '');
+  return Object.keys(ISSUERS).find(k => c && c === ISSUERS[k].name) || (c.indexOf('志') >= 0 ? 'kokorozashi' : 'canup');
+}
+
+// 印影はリポジトリに置かず、Driveの画像を合言葉つきのAPIでだけ渡す。
+// ファイルIDが空欄なら、決まった名前の画像がDriveにあればそれを使う(角印ができたら置くだけでよい)
+function sealDataUrl_(id, fallbackName) {
+  let file = null;
+  id = String(id || '').trim();
+  if (id) file = DriveApp.getFileById(id);
+  else if (fallbackName) {
+    const it = DriveApp.getFilesByName(fallbackName);
+    if (it.hasNext()) file = it.next();
+  }
+  if (!file) return '';
+  const blob = file.getBlob();
   return 'data:' + blob.getContentType() + ';base64,' + Utilities.base64Encode(blob.getBytes());
 }
 

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
-<title>Canup 見積書・請求書</title>
+<title>Canup・志 見積書・請求書</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
@@ -101,7 +101,7 @@
 </head>
 <body>
 <header class="bar">
-  <h1>Canup 見積書・請求書</h1>
+  <h1>Canup・志 見積書・請求書</h1>
   <span class="who" id="who">未接続</span>
   <button class="plain" type="button" onclick="toggleSetup()">接続設定</button>
 </header>
@@ -124,6 +124,11 @@
       <div class="seg big">
         <button type="button" id="typeQuote" class="on" onclick="setDocType('quote')">見積書</button>
         <button type="button" id="typeInvoice" onclick="setDocType('invoice')">請求書</button>
+      </div>
+      <label>発行元(送り主)</label>
+      <div class="seg">
+        <button type="button" id="issCanup" class="on" onclick="setIssuer('canup')">株式会社Canup</button>
+        <button type="button" id="issKoko" onclick="setIssuer('kokorozashi')">株式会社志</button>
       </div>
       <label for="histPick">過去の書類から呼び出す</label>
       <select id="histPick"><option value="">(接続すると発行済みの書類が並びます)</option></select>
@@ -249,7 +254,9 @@ const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp
 function lsGet(k){ try { return localStorage.getItem(k) || ''; } catch(e){ return ''; } }
 function lsSet(k,v){ try { localStorage.setItem(k, v); } catch(e){} }
 
-let issuer = null;
+let issuer = null;      // 今選んでいる発行元の情報
+let issuers = {};       // { canup: {...}, kokorozashi: {...} }
+let issuerKey = 'canup';
 let validDays = 30;
 let payDays = 30;
 let docType = 'quote';
@@ -359,7 +366,7 @@ function render(issued) {
 // ---------- 入力の自動保存(この端末のブラウザに) ----------
 function saveDraft() {
   if (restoring || $('issueBtn').dataset.done) return;   // 発行後は次の書類を始めるまで保存しない
-  const d = { docType, toMode, to: $('to').value, honorific: $('honorific').value, subject: $('subject').value,
+  const d = { docType, issuerKey, toMode, to: $('to').value, honorific: $('honorific').value, subject: $('subject').value,
     taxMode: $('taxMode').value, note: $('note').value, items: readItems(), fromNo };
   lsSet(LS.draft, JSON.stringify(d));
   const t = new Date();
@@ -371,6 +378,7 @@ function fillForm(d) {
   restoring = true;
   try {
     if (d.docType) setDocType(d.docType);
+    setIssuer(d.issuerKey || 'canup');
     setToMode(d.toMode || 'list');
     $('to').value = d.to || '';
     $('toPick').value = d.to || '';
@@ -403,6 +411,16 @@ function clearForm() {
   fromNo = '';
   $('histPick').value = '';
   resetForm();
+}
+
+// ---------- 発行元 ----------
+function setIssuer(k) {
+  issuerKey = k === 'kokorozashi' ? 'kokorozashi' : 'canup';
+  $('issCanup').classList.toggle('on', issuerKey === 'canup');
+  $('issKoko').classList.toggle('on', issuerKey === 'kokorozashi');
+  issuer = issuers[issuerKey] || null;
+  if (issuer) $('who').textContent = '発行元: ' + (issuer.company || '(社名未設定)');
+  render();
 }
 
 // ---------- 書類の種類 ----------
@@ -453,7 +471,8 @@ async function connect(showOk) {
   $('who').textContent = '接続中...';
   try {
     const init = await api('init');
-    issuer = init.issuer; validDays = init.validDays || 30; payDays = init.payDays || 30;
+    issuers = init.issuers || { canup: init.issuer };
+    issuer = issuers[issuerKey] || issuers.canup; validDays = init.validDays || 30; payDays = init.payDays || 30;
     $('who').textContent = '発行元: ' + (issuer.company || '(社名未設定)');
     fillList('itemList', init.items);
     const keep = $('to').value, keepHon = $('honorific').value;
@@ -507,7 +526,7 @@ function fillHistory(arr) {
   sel.innerHTML = '<option value="">' + ((arr && arr.length) ? '選んでください(新しい順・' + arr.length + '件)' : '発行済みの書類はまだありません') + '</option>';
   (arr || []).forEach(h => {
     const o = document.createElement('option'); o.value = h.no;
-    o.textContent = h.no + '  ' + (h.type === 'invoice' ? '請求' : '見積') + '  ' + h.to + (h.subject ? '  ' + h.subject : '') + '  ¥' + yen(h.total);
+    o.textContent = h.no + '  ' + (h.issuerKey === 'kokorozashi' ? '志 ' : '') + (h.type === 'invoice' ? '請求' : '見積') + '  ' + h.to + (h.subject ? '  ' + h.subject : '') + '  ¥' + yen(h.total);
     sel.appendChild(o);
   });
 }
@@ -548,13 +567,14 @@ async function issue() {
   const data = {
     to: $('to').value.trim(), honorific: $('honorific').value, subject: $('subject').value.trim(),
     date: $('date').value, taxMode: $('taxMode').value, note: $('note').value.trim(), items: readItems(),
-    docType, due: docType === 'invoice' ? $('due').value : '', fromNo
+    docType, due: docType === 'invoice' ? $('due').value : '', fromNo, issuerKey
   };
   const D = DOC[docType];
   if (docType === 'invoice' && !data.due) return setMsg('msg', 'お支払期限を入れてください。', 'err');
   if (!data.to) return setMsg('msg', toMode === 'new' ? '宛名を入れてください。' : '宛名を一覧から選んでください(一覧にない場合は「新規に入力」)。', 'err');
   if (!data.items.some(i => i.name && Number(i.qty) && i.price !== '')) return setMsg('msg', '品目・数量・単価がそろった行を1つ以上入れてください。', 'err');
   if (!issuer && !(await connect(false))) return;
+  if (!issuers[issuerKey]) return setMsg('msg', 'スプレッドシート側がまだ発行元の切替に対応していません。管理者に連絡してください。', 'err');
 
   busy = true; $('issueBtn').disabled = true;
   let issued = null;
@@ -605,7 +625,7 @@ $('histPick').addEventListener('change', async e => {
   try {
     const d = await api('load', { no });
     const keepType = docType;
-    fillForm(Object.assign({}, d, { docType: keepType, toMode: 'list', fromNo: d.no }));
+    fillForm(Object.assign({}, d, { docType: keepType, issuerKey: d.issuerKey || issuerKey, toMode: 'list', fromNo: d.no }));
     const as = keepType !== d.docType ? '(' + DOC[keepType].label + 'として発行されます)' : '';
     setMsg('msg', no + ' の内容を入れました' + as + '。直してから発行してください。', 'ok');
   } catch (err) {
