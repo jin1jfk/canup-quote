@@ -104,9 +104,15 @@
   @media (max-width:900px) {
     .wrap { grid-template-columns:1fr; }
   }
+  /* 見積書と案件管理の行き来(両方のページで同じ見た目) */
+  nav.apps { display:grid; grid-template-columns:1fr 1fr; background:#1F3864; }
+  nav.apps a { display:block; text-align:center; padding:12px 8px; color:#c9d3e3; text-decoration:none; font-size:16px; font-weight:500; border-bottom:4px solid transparent; }
+  nav.apps a.on { color:#fff; font-weight:700; border-bottom-color:#fff; }
+  nav.apps a:not(.on):hover { color:#fff; }
 </style>
 </head>
 <body>
+<nav class="apps"><a href="./" class="on" aria-current="page">見積書・請求書</a><a href="anken.html">案件管理</a></nav>
 <header class="bar">
   <h1>Canup・志 見積書・請求書</h1>
   <span class="who" id="who">未接続</span>
