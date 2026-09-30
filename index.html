@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Canup 見積書発行</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink:#1b1f24; --sub:#5b6470; --faint:#8a929c; --line:#d8dde3; --soft:#f4f6f8; --bg:#ffffff;
+    --navy:#1F3864; --err:#a3261e; --ok:#1d6b3a;
+  }
+  * { box-sizing:border-box; }
+  html, body { margin:0; background:var(--soft); color:var(--ink); }
+  body { font:15px/1.65 "Noto Sans JP","Hiragino Sans",sans-serif; }
+  header.bar { background:var(--bg); border-bottom:1px solid var(--line); padding:12px 16px; display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; }
+  header.bar h1 { font-size:17px; margin:0; letter-spacing:.02em; }
+  header.bar .who { color:var(--sub); font-size:13px; }
+  header.bar button { margin-left:auto; }
+  .wrap { display:grid; grid-template-columns:minmax(340px, 460px) 1fr; gap:20px; padding:16px; max-width:1400px; margin:0 auto; }
+  .panel { background:var(--bg); border:1px solid var(--line); border-radius:4px; padding:16px; }
+  .panel h2 { font-size:14px; margin:0 0 10px; color:var(--navy); letter-spacing:.04em; }
+  .panel + .panel { margin-top:14px; }
+  label { display:block; font-size:12px; color:var(--sub); margin:10px 0 3px; }
+  input, select, textarea { width:100%; font:inherit; font-size:15px; padding:8px 10px; border:1px solid var(--line); border-radius:3px; background:#fff; color:var(--ink); }
+  input:focus, select:focus, textarea:focus { outline:2px solid var(--navy); outline-offset:-1px; }
+  textarea { min-height:64px; resize:vertical; }
+  .two { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .to { display:grid; grid-template-columns:1fr 92px; gap:8px; }
+  .item { border-top:1px solid var(--line); padding:10px 0 4px; }
+  .item:first-child { border-top:0; padding-top:0; }
+  .item .r1 { display:grid; grid-template-columns:1fr auto; gap:8px; }
+  .item .r2 { display:grid; grid-template-columns:70px 64px 1fr auto; gap:8px; margin-top:6px; align-items:center; }
+  .item .amt { text-align:right; font-variant-numeric:tabular-nums; min-width:90px; }
+  .linkbtn { border:0; background:none; color:var(--sub); font:inherit; font-size:13px; cursor:pointer; padding:6px 2px; text-decoration:underline; }
+  .add { width:100%; margin-top:8px; padding:8px; background:var(--soft); border:1px dashed var(--line); border-radius:3px; font:inherit; cursor:pointer; color:var(--ink); }
+  .sum { margin-top:12px; font-variant-numeric:tabular-nums; }
+  .sum div { display:flex; justify-content:space-between; padding:2px 0; font-size:14px; }
+  .sum .grand { border-top:2px solid var(--ink); margin-top:4px; padding-top:6px; font-weight:700; font-size:18px; }
+  .issue { width:100%; margin-top:14px; padding:13px; background:var(--navy); color:#fff; border:0; border-radius:3px; font:inherit; font-size:16px; font-weight:700; letter-spacing:.06em; cursor:pointer; }
+  .issue:disabled { opacity:.45; cursor:default; }
+  button.plain { background:#fff; border:1px solid var(--line); border-radius:3px; padding:6px 12px; font:inherit; font-size:13px; cursor:pointer; }
+  .msg { margin-top:10px; font-size:14px; min-height:1.6em; }
+  .msg.err { color:var(--err); }
+  .msg.ok { color:var(--ok); }
+  .msg a { color:var(--navy); font-weight:700; }
+  .hint { font-size:12px; color:var(--faint); margin:6px 0 0; }
+  #setup { display:none; }
+  #setup.show { display:block; }
+
+  /* プレビュー */
+  .previewCol { min-width:0; }
+  .previewHead { font-size:12px; color:var(--sub); margin:0 0 6px; }
+  .stage { overflow:auto; background:#e9ecef; border:1px solid var(--line); border-radius:4px; padding:16px; }
+  .scaler { transform-origin:top left; }
+  /* A4 = 794 x 1123 px (96dpi) */
+  #doc { width:794px; height:1123px; background:#fff; color:#111; padding:56px 60px; font-family:"Noto Sans JP",sans-serif; font-size:12.5px; line-height:1.6; position:relative; box-shadow:0 1px 3px rgba(0,0,0,.12); }
+  #doc h3 { text-align:center; font-size:26px; letter-spacing:.6em; margin:0 0 34px; font-weight:700; padding-left:.6em; }
+  #doc .top { display:grid; grid-template-columns:1fr 250px; gap:30px; }
+  #doc .dest { font-size:18px; font-weight:700; border-bottom:1px solid #111; padding-bottom:4px; margin-bottom:14px; min-height:34px; }
+  #doc .meta { width:100%; border-collapse:collapse; font-size:12px; }
+  #doc .meta td { padding:2px 0; }
+  #doc .meta td:first-child { color:#555; width:70px; }
+  #doc .meta td:last-child { text-align:right; }
+  #doc .issuer { margin-top:18px; font-size:11.5px; line-height:1.7; }
+  #doc .issuer .co { font-size:14px; font-weight:700; margin-bottom:2px; }
+  #doc .subj { display:grid; grid-template-columns:70px 1fr; margin:6px 0 16px; }
+  #doc .subj span:last-child { border-bottom:1px solid #999; }
+  #doc .amountBox { display:grid; grid-template-columns:110px 1fr; align-items:end; border-bottom:2px solid #111; padding-bottom:4px; width:360px; }
+  #doc .amountBox b { font-size:24px; font-variant-numeric:tabular-nums; }
+  #doc .amountNote { font-size:11px; color:#555; margin-top:3px; }
+  #doc table.items { width:100%; border-collapse:collapse; margin-top:26px; font-variant-numeric:tabular-nums; }
+  #doc table.items th { background:#1F3864; color:#fff; font-weight:500; padding:5px 6px; font-size:12px; }
+  #doc table.items td { border:1px solid #bbb; padding:5px 6px; height:28px; }
+  #doc table.items td.c { text-align:center; }
+  #doc table.items td.n { text-align:right; }
+  #doc .totals { width:260px; margin:10px 0 0 auto; border-collapse:collapse; font-variant-numeric:tabular-nums; }
+  #doc .totals td { border:1px solid #bbb; padding:4px 8px; }
+  #doc .totals td:first-child { background:#f3f5f8; width:120px; }
+  #doc .totals td:last-child { text-align:right; }
+  #doc .totals tr.g td { font-weight:700; background:#e6ebf3; }
+  #doc .noteH { margin-top:22px; font-weight:700; }
+  #doc .note { border:1px solid #bbb; min-height:90px; padding:8px 10px; white-space:pre-wrap; }
+  #doc .draft { position:absolute; top:22px; right:60px; font-size:11px; color:#a3261e; border:1px solid #a3261e; padding:1px 8px; }
+
+  @media (max-width:900px) {
+    .wrap { grid-template-columns:1fr; }
+  }
+</style>
+</head>
+<body>
+<header class="bar">
+  <h1>Canup 見積書発行</h1>
+  <span class="who" id="who">未接続</span>
+  <button class="plain" type="button" onclick="toggleSetup()">接続設定</button>
+</header>
+
+<div class="wrap">
+  <div>
+    <section class="panel" id="setup">
+      <h2>接続設定(この端末で最初に1回)</h2>
+      <label for="apiUrl">スプレッドシート側のURL</label>
+      <input id="apiUrl" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off">
+      <label for="apiKey">合言葉</label>
+      <input id="apiKey" autocomplete="off">
+      <p class="hint">合言葉はスプレッドシート「株式会社Canup_物件管理リスト」の「設定」シートにあります。入れた内容はこの端末のブラウザにだけ保存されます。</p>
+      <button class="plain" type="button" style="margin-top:10px" onclick="saveSetup()">保存して接続を確認</button>
+      <div class="msg" id="setupMsg"></div>
+    </section>
+
+    <section class="panel">
+      <h2>宛先と件名</h2>
+      <label for="to">宛名</label>
+      <div class="to">
+        <input id="to" list="toList" autocomplete="off" placeholder="例: ○○不動産株式会社">
+        <select id="honorific"><option>御中</option><option>様</option></select>
+      </div>
+      <datalist id="toList"></datalist>
+      <label for="subject">件名</label>
+      <input id="subject" placeholder="例: 残置物回収一式">
+      <div class="two">
+        <div>
+          <label for="date">発行日</label>
+          <input id="date" type="date">
+        </div>
+        <div>
+          <label for="taxMode">単価の書き方</label>
+          <select id="taxMode">
+            <option value="外税">税抜(消費税を足す)</option>
+            <option value="内税">税込</option>
+          </select>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>明細</h2>
+      <div id="items"></div>
+      <datalist id="itemList"></datalist>
+      <button class="add" type="button" onclick="addItem()">+ 行を追加</button>
+      <div class="sum">
+        <div><span id="subLabel">小計</span><span id="sSub">0</span></div>
+        <div><span id="taxLabel">消費税(10%)</span><span id="sTax">0</span></div>
+        <div class="grand"><span>合計</span><span id="sTotal">¥0</span></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>備考</h2>
+      <textarea id="note" placeholder="例: 作業日は別途ご相談。駐車場代は実費。"></textarea>
+      <button class="issue" id="issueBtn" type="button" onclick="issue()">見積書を発行(PDF)</button>
+      <div class="msg" id="msg"></div>
+      <p class="hint">発行すると見積番号が振られ、PDFがこの端末にダウンロードされます。同じPDFがDriveの「Canup見積書」フォルダと「見積台帳」シートにも記録されます。</p>
+    </section>
+  </div>
+
+  <div class="previewCol">
+    <p class="previewHead">プレビュー(このままPDFになります)</p>
+    <div class="stage" id="stage">
+      <div class="scaler" id="scaler">
+        <div id="doc">
+          <div class="draft" id="draft">下書き</div>
+          <h3>御見積書</h3>
+          <div class="top">
+            <div>
+              <div class="dest" id="dDest"></div>
+              <div>下記のとおりお見積り申し上げます。</div>
+              <div class="subj"><span>件名</span><span id="dSubj"></span></div>
+              <div class="amountBox"><span>御見積金額</span><b id="dAmount">¥0</b></div>
+              <div class="amountNote" id="dAmountNote">(税込)</div>
+            </div>
+            <div>
+              <table class="meta">
+                <tr><td>見積番号</td><td id="dNo">発行時に採番</td></tr>
+                <tr><td>発行日</td><td id="dDate"></td></tr>
+                <tr><td>有効期限</td><td id="dValid"></td></tr>
+              </table>
+              <div class="issuer" id="dIssuer"></div>
+            </div>
+          </div>
+          <table class="items">
+            <thead><tr><th style="width:40px">No</th><th>品目</th><th style="width:60px">数量</th><th style="width:50px">単位</th><th style="width:100px">単価</th><th style="width:110px">金額</th></tr></thead>
+            <tbody id="dItems"></tbody>
+          </table>
+          <table class="totals">
+            <tr><td id="dSubLabel">小計</td><td id="dSub"></td></tr>
+            <tr><td id="dTaxLabel">消費税(10%)</td><td id="dTax"></td></tr>
+            <tr class="g"><td>合計</td><td id="dTotal"></td></tr>
+          </table>
+          <div class="noteH">備考</div>
+          <div class="note" id="dNote"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script>
+// スプレッドシート側(Apps Script)のURL。発行後にここへ入れておけば各端末で入力不要になる。
+const DEFAULT_API_URL = '';
+const MAX_ITEMS = 15;
+const MIN_ROWS = 10;
+const LS = { url:'canupQuote.apiUrl', key:'canupQuote.apiKey' };
+
+const $ = id => document.getElementById(id);
+const yen = n => Number(n || 0).toLocaleString('ja-JP');
+const jpDate = s => { if (!s) return ''; const [y,m,d] = s.split('-').map(Number); return y + '年' + m + '月' + d + '日'; };
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function lsGet(k){ try { return localStorage.getItem(k) || ''; } catch(e){ return ''; } }
+function lsSet(k,v){ try { localStorage.setItem(k, v); } catch(e){} }
+
+let issuer = null;
+let validDays = 30;
+let busy = false;
+
+// ---------- 明細 ----------
+function addItem(v) {
+  v = v || {};
+  const box = $('items');
+  if (box.children.length >= MAX_ITEMS) { setMsg('msg', '明細は' + MAX_ITEMS + '行までです。', 'err'); return; }
+  const el = document.createElement('div');
+  el.className = 'item';
+  el.innerHTML =
+    '<div class="r1"><input class="name" list="itemList" placeholder="品目" autocomplete="off">' +
+    '<button class="linkbtn del" type="button">削除</button></div>' +
+    '<div class="r2"><input class="qty" type="number" min="0" step="any" inputmode="decimal" placeholder="数量">' +
+    '<input class="unit" placeholder="式">' +
+    '<input class="price" type="number" min="0" step="1" inputmode="numeric" placeholder="単価">' +
+    '<span class="amt">0</span></div>';
+  el.querySelector('.name').value = v.name || '';
+  el.querySelector('.qty').value = v.qty != null ? v.qty : 1;
+  el.querySelector('.unit').value = v.unit || '';
+  el.querySelector('.price').value = v.price != null ? v.price : '';
+  el.querySelectorAll('input').forEach(i => i.addEventListener('input', () => render()));
+  el.querySelector('.del').addEventListener('click', () => { el.remove(); if (!box.children.length) addItem(); render(); });
+  box.appendChild(el);
+  render();
+}
+
+function readItems() {
+  return [...document.querySelectorAll('#items .item')].map(el => ({
+    name: el.querySelector('.name').value.trim(),
+    qty: el.querySelector('.qty').value,
+    unit: el.querySelector('.unit').value.trim(),
+    price: el.querySelector('.price').value
+  }));
+}
+
+function calc(items, taxMode) {
+  const sum = items.reduce((a, it) => a + Math.round(Number(it.qty || 0) * Number(it.price || 0)), 0);
+  if (taxMode === '内税') { const tax = Math.floor(sum * 0.1 / 1.1); return { subtotal: sum - tax, tax, total: sum }; }
+  const tax = Math.floor(sum * 0.1); return { subtotal: sum, tax, total: sum + tax };
+}
+
+function addDays(s, n) {
+  if (!s) return '';
+  const [y,m,d] = s.split('-').map(Number);
+  const t = new Date(Date.UTC(y, m - 1, d) + n * 86400000);
+  return t.getUTCFullYear() + '-' + String(t.getUTCMonth() + 1).padStart(2,'0') + '-' + String(t.getUTCDate()).padStart(2,'0');
+}
+
+// ---------- プレビュー ----------
+function render(issued) {
+  const items = readItems();
+  const taxMode = $('taxMode').value;
+  const inTax = taxMode === '内税';
+  document.querySelectorAll('#items .item').forEach(el => {
+    el.querySelector('.amt').textContent = yen(Math.round(Number(el.querySelector('.qty').value || 0) * Number(el.querySelector('.price').value || 0)));
+  });
+  const c = issued || calc(items, taxMode);
+  $('subLabel').textContent = inTax ? '小計(税抜)' : '小計';
+  $('taxLabel').textContent = inTax ? 'うち消費税(10%)' : '消費税(10%)';
+  $('sSub').textContent = yen(c.subtotal); $('sTax').textContent = yen(c.tax); $('sTotal').textContent = '¥' + yen(c.total);
+
+  const to = $('to').value.trim();
+  $('dDest').textContent = to ? to + ' ' + $('honorific').value : '';
+  $('dSubj').textContent = $('subject').value.trim();
+  $('dAmount').textContent = '¥' + yen(c.total);
+  $('dAmountNote').textContent = inTax ? '(税込・うち消費税 ¥' + yen(c.tax) + ')' : '(税込)';
+  const date = issued ? issued.issueDate : $('date').value;
+  $('dDate').textContent = jpDate(date);
+  $('dValid').textContent = jpDate(issued ? issued.validDate : addDays(date, validDays));
+  $('dNo').textContent = issued ? issued.no : '発行時に採番';
+  $('draft').style.display = issued ? 'none' : 'block';
+
+  const iss = (issued && issued.issuer) || issuer;
+  $('dIssuer').innerHTML = iss
+    ? '<div class="co">' + esc(iss.company) + '</div>' +
+      [[iss.zip, iss.address].filter(Boolean).join(' '), iss.tel ? 'TEL ' + iss.tel : '', iss.mail, iss.regNo ? '登録番号 ' + iss.regNo : '']
+        .filter(Boolean).map(s => '<div>' + esc(s) + '</div>').join('')
+    : '<div style="color:#a3261e">発行元の情報は接続後に表示されます</div>';
+
+  const used = items.filter(it => it.name || it.price);
+  const rows = [];
+  for (let i = 0; i < Math.max(MIN_ROWS, used.length); i++) {
+    const it = used[i];
+    if (!it) { rows.push('<tr><td></td><td></td><td></td><td></td><td></td><td></td></tr>'); continue; }
+    const amt = Math.round(Number(it.qty || 0) * Number(it.price || 0));
+    rows.push('<tr><td class="c">' + (i + 1) + '</td><td>' + esc(it.name) + '</td><td class="c">' + esc(it.qty) + '</td><td class="c">' + esc(it.unit || '式') +
+      '</td><td class="n">' + (it.price !== '' ? yen(it.price) : '') + '</td><td class="n">' + yen(amt) + '</td></tr>');
+  }
+  $('dItems').innerHTML = rows.join('');
+  $('dSubLabel').textContent = inTax ? '小計(税抜)' : '小計';
+  $('dTaxLabel').textContent = inTax ? 'うち消費税(10%)' : '消費税(10%)';
+  $('dSub').textContent = yen(c.subtotal); $('dTax').textContent = yen(c.tax); $('dTotal').textContent = '¥' + yen(c.total);
+  const note = [$('note').value.trim(), iss && iss.bank ? 'お振込先: ' + iss.bank : ''].filter(Boolean).join('\n');
+  $('dNote').textContent = note;
+  fitPreview();
+}
+
+function fitPreview() {
+  const stage = $('stage'), sc = $('scaler');
+  const w = stage.clientWidth - 32;
+  const s = Math.min(1, w / 794);
+  sc.style.transform = 'scale(' + s + ')';
+  sc.style.width = '794px';
+  sc.style.height = (1123 * s) + 'px';
+}
+
+// ---------- 通信 ----------
+function apiUrl() { return lsGet(LS.url) || DEFAULT_API_URL; }
+
+async function api(action, payload) {
+  const url = apiUrl();
+  if (!url) throw new Error('接続設定がまだです。右上の「接続設定」からURLと合言葉を入れてください。');
+  let res;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(Object.assign({ key: lsGet(LS.key), action }, payload || {}))
+    });
+  } catch (e) {
+    throw new Error('スプレッドシートにつながりませんでした。電波の状態か、接続設定のURLを確認してください。');
+  }
+  let j;
+  try { j = await res.json(); } catch (e) { throw new Error('スプレッドシートから想定外の応答がありました(HTTP ' + res.status + ')。URLが「ウェブアプリ」の /exec で終わるものか確認してください。'); }
+  if (!j.ok) throw new Error(j.error || '原因不明のエラーです。');
+  return j;
+}
+
+async function connect(showOk) {
+  $('who').textContent = '接続中...';
+  try {
+    const init = await api('init');
+    issuer = init.issuer; validDays = init.validDays || 30;
+    $('who').textContent = '発行元: ' + (issuer.company || '(社名未設定)');
+    fillList('toList', init.recipients); fillList('itemList', init.items);
+    if (!init.ready) setMsg('msg', 'スプレッドシートの初期設定がまだです。「見積書」メニューから「初期設定」を実行してください。', 'err');
+    if (showOk) setMsg('setupMsg', '接続できました。', 'ok');
+    render();
+    return true;
+  } catch (e) {
+    $('who').textContent = '未接続';
+    setMsg(showOk ? 'setupMsg' : 'msg', e.message, 'err');
+    if (!apiUrl() || !lsGet(LS.key)) $('setup').classList.add('show');
+    return false;
+  }
+}
+
+function fillList(id, arr) {
+  const dl = $(id); dl.innerHTML = '';
+  (arr || []).forEach(v => { const o = document.createElement('option'); o.value = v; dl.appendChild(o); });
+}
+
+function toggleSetup() {
+  $('apiUrl').value = apiUrl(); $('apiKey').value = lsGet(LS.key);
+  $('setup').classList.toggle('show');
+}
+
+async function saveSetup() {
+  lsSet(LS.url, $('apiUrl').value.trim()); lsSet(LS.key, $('apiKey').value.trim());
+  setMsg('setupMsg', '確認中...', '');
+  if (await connect(true)) setTimeout(() => $('setup').classList.remove('show'), 900);
+}
+
+function setMsg(id, text, cls, link) {
+  const m = $(id); m.className = 'msg' + (cls ? ' ' + cls : ''); m.textContent = text;
+  if (link) { const a = document.createElement('a'); a.href = link.href; a.target = '_blank'; a.rel = 'noopener'; a.textContent = link.text; m.append(' ', a); }
+}
+
+// ---------- 発行 ----------
+async function makePdf() {
+  await document.fonts.ready;
+  const sc = $('scaler'); const prev = sc.style.transform;
+  sc.style.transform = 'none';
+  try {
+    const canvas = await html2canvas($('doc'), { scale: 2, backgroundColor: '#ffffff', useCORS: true });
+    const pdf = new jspdf.jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+    pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, 210, 297);
+    return pdf;
+  } finally {
+    sc.style.transform = prev;
+  }
+}
+
+async function issue() {
+  if (busy) return;
+  const data = {
+    to: $('to').value.trim(), honorific: $('honorific').value, subject: $('subject').value.trim(),
+    date: $('date').value, taxMode: $('taxMode').value, note: $('note').value.trim(), items: readItems()
+  };
+  if (!data.to) return setMsg('msg', '宛名が空です。', 'err');
+  if (!data.items.some(i => i.name && Number(i.qty) && i.price !== '')) return setMsg('msg', '品目・数量・単価がそろった行を1つ以上入れてください。', 'err');
+  if (!issuer && !(await connect(false))) return;
+
+  busy = true; $('issueBtn').disabled = true;
+  let issued = null;
+  try {
+    setMsg('msg', '見積番号を取っています...', '');
+    issued = await api('issue', { data });
+    render(issued);
+    setMsg('msg', issued.no + ' のPDFを作っています...', '');
+    const pdf = await makePdf();
+    const fileName = issued.no + '_' + data.to.replace(/[\\\/:*?"<>|\s]+/g, '_').slice(0, 40) + '_見積書.pdf';
+    pdf.save(fileName);
+    setMsg('msg', issued.no + ' をダウンロードしました。Driveに保存しています...', '');
+    const b64 = pdf.output('datauristring').split(',')[1];
+    const saved = await api('attachPdf', { no: issued.no, pdf: b64 });
+    setMsg('msg', issued.no + ' を発行しました(合計 ¥' + yen(issued.total) + ')。', 'ok', { href: saved.url, text: 'Driveで開く' });
+    $('issueBtn').textContent = '続けて別の見積書を作る';
+    $('issueBtn').onclick = resetForm;
+  } catch (e) {
+    const where = issued ? '(' + issued.no + ' は見積台帳に記録済み。PDFの保存だけ失敗)' : '';
+    setMsg('msg', e.message + where, 'err');
+    if (issued) render(issued);
+  } finally {
+    busy = false; $('issueBtn').disabled = false;
+  }
+}
+
+function resetForm() {
+  ['to','subject','note'].forEach(id => $(id).value = '');
+  $('items').innerHTML = ''; addItem();
+  $('issueBtn').textContent = '見積書を発行(PDF)';
+  $('issueBtn').onclick = issue;
+  setMsg('msg', '', '');
+  render();
+}
+
+// ---------- 起動 ----------
+['to','honorific','subject','date','taxMode','note'].forEach(id => $(id).addEventListener('input', () => render()));
+window.addEventListener('resize', fitPreview);
+(function init() {
+  const d = new Date();
+  $('date').value = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  addItem();
+  if (apiUrl() && lsGet(LS.key)) connect(false);
+  else { $('setup').classList.add('show'); $('apiUrl').value = apiUrl(); }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<style>
+  :root { --ink:#1b1f24; --sub:#5b6470; --line:#d5dae1; --navy:#1F3864; --bg:#ffffff; --soft:#f5f7fa; --err:#b3261e; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 "Hiragino Sans","Noto Sans JP",sans-serif; }
+  main { max-width:860px; margin:0 auto; padding:20px 16px 40px; }
+  h1 { font-size:20px; margin:0 0 4px; }
+  .lead { color:var(--sub); font-size:13px; margin:0 0 20px; }
+  fieldset { border:1px solid var(--line); border-radius:6px; padding:14px 14px 6px; margin:0 0 16px; }
+  legend { font-weight:700; padding:0 6px; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:10px 14px; }
+  .full { grid-column:1 / -1; }
+  label { display:block; font-size:12px; color:var(--sub); margin-bottom:2px; }
+  input, select, textarea { width:100%; font:inherit; padding:8px 10px; border:1px solid var(--line); border-radius:4px; background:#fff; }
+  textarea { min-height:70px; resize:vertical; }
+  .row2 { display:flex; gap:8px; }
+  .row2 > :first-child { flex:1; }
+  .row2 > :last-child { width:110px; }
+  table { width:100%; border-collapse:collapse; margin-bottom:8px; }
+  th { background:var(--navy); color:#fff; font-size:12px; font-weight:600; padding:6px; text-align:left; }
+  td { padding:4px; border-bottom:1px solid var(--line); vertical-align:top; }
+  td input { padding:6px 8px; }
+  .num { text-align:right; }
+  .amt { text-align:right; white-space:nowrap; padding-top:10px; }
+  .del { border:0; background:none; color:var(--sub); cursor:pointer; font-size:13px; padding:8px 4px; }
+  .add { border:1px dashed var(--line); background:var(--soft); width:100%; padding:8px; border-radius:4px; cursor:pointer; font:inherit; margin-bottom:10px; }
+  .totals { margin-left:auto; width:280px; }
+  .totals div { display:flex; justify-content:space-between; padding:3px 0; }
+  .totals .grand { border-top:2px solid var(--ink); font-weight:700; font-size:17px; margin-top:4px; padding-top:6px; }
+  .actions { display:flex; gap:12px; align-items:center; margin-top:8px; }
+  button.primary { background:var(--navy); color:#fff; border:0; border-radius:4px; padding:12px 28px; font:inherit; font-weight:700; cursor:pointer; }
+  button.primary:disabled { opacity:.5; cursor:default; }
+  #msg { font-size:14px; }
+  #msg.err { color:var(--err); }
+  #msg a { color:var(--navy); font-weight:700; }
+  @media (max-width:640px) {
+    .grid { grid-template-columns:1fr; }
+    th:nth-child(4), td:nth-child(4) { display:none; }
+    .totals { width:100%; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>見積書を作成</h1>
+  <p class="lead" id="lead">読み込み中...</p>
+
+  <fieldset>
+    <legend>宛先と件名</legend>
+    <div class="grid">
+      <div class="full">
+        <label for="to">宛名</label>
+        <div class="row2">
+          <input id="to" list="toList" autocomplete="off" placeholder="例: ○○不動産株式会社">
+          <select id="honorific"><option>御中</option><option>様</option></select>
+        </div>
+        <datalist id="toList"></datalist>
+      </div>
+      <div class="full">
+        <label for="subject">件名</label>
+        <input id="subject" placeholder="例: 残置物回収一式">
+      </div>
+      <div>
+        <label for="date">発行日</label>
+        <input id="date" type="date">
+      </div>
+      <div>
+        <label for="taxMode">金額の書き方</label>
+        <select id="taxMode">
+          <option value="外税">単価は税抜(消費税を足す)</option>
+          <option value="内税">単価は税込</option>
+        </select>
+      </div>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>明細</legend>
+    <table>
+      <thead><tr><th style="width:42%">品目</th><th style="width:12%">数量</th><th style="width:12%">単位</th><th style="width:18%">単価</th><th style="width:12%" class="num">金額</th><th></th></tr></thead>
+      <tbody id="items"></tbody>
+    </table>
+    <datalist id="itemList"></datalist>
+    <button class="add" type="button" onclick="addRow()">+ 行を追加</button>
+    <div class="totals">
+      <div><span id="subLabel">小計</span><span id="sub">0</span></div>
+      <div><span id="taxLabel">消費税(10%)</span><span id="tax">0</span></div>
+      <div class="grand"><span>合計</span><span id="total">¥0</span></div>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>備考</legend>
+    <textarea id="note" placeholder="例: 作業日は別途ご相談。駐車場代は実費。"></textarea>
+  </fieldset>
+
+  <div class="actions">
+    <button class="primary" id="go" onclick="submitQuote()">作成してPDFを保存</button>
+    <span id="msg"></span>
+  </div>
+</main>
+
+<script>
+const MAX_ROWS = 15;
+const yen = n => Number(n || 0).toLocaleString('ja-JP');
+
+function addRow(v) {
+  v = v || {};
+  const tb = document.getElementById('items');
+  if (tb.children.length >= MAX_ROWS) return;
+  const tr = document.createElement('tr');
+  tr.innerHTML =
+    '<td><input class="name" list="itemList" autocomplete="off"></td>' +
+    '<td><input class="qty num" type="number" min="0" step="any" inputmode="decimal"></td>' +
+    '<td><input class="unit" placeholder="式"></td>' +
+    '<td><input class="price num" type="number" min="0" step="1" inputmode="numeric"></td>' +
+    '<td class="amt">0</td>' +
+    '<td><button class="del" type="button" title="この行を削除">削除</button></td>';
+  tr.querySelector('.name').value = v.name || '';
+  tr.querySelector('.qty').value = v.qty != null ? v.qty : 1;
+  tr.querySelector('.unit').value = v.unit || '';
+  tr.querySelector('.price').value = v.price != null ? v.price : '';
+  tr.querySelectorAll('input').forEach(i => i.addEventListener('input', recalc));
+  tr.querySelector('.del').addEventListener('click', () => { tr.remove(); if (!tb.children.length) addRow(); recalc(); });
+  tb.appendChild(tr);
+  recalc();
+}
+
+function readItems() {
+  return [...document.querySelectorAll('#items tr')].map(tr => ({
+    name: tr.querySelector('.name').value.trim(),
+    qty: tr.querySelector('.qty').value,
+    unit: tr.querySelector('.unit').value.trim(),
+    price: tr.querySelector('.price').value
+  }));
+}
+
+function recalc() {
+  let sum = 0;
+  document.querySelectorAll('#items tr').forEach(tr => {
+    const a = Math.round(Number(tr.querySelector('.qty').value || 0) * Number(tr.querySelector('.price').value || 0));
+    tr.querySelector('.amt').textContent = yen(a);
+    sum += a;
+  });
+  const inTax = document.getElementById('taxMode').value === '内税';
+  let sub, tax, total;
+  if (inTax) { total = sum; tax = Math.floor(sum * 0.1 / 1.1); sub = total - tax; }
+  else { sub = sum; tax = Math.floor(sum * 0.1); total = sub + tax; }
+  document.getElementById('subLabel').textContent = inTax ? '小計(税抜)' : '小計';
+  document.getElementById('taxLabel').textContent = inTax ? 'うち消費税(10%)' : '消費税(10%)';
+  document.getElementById('sub').textContent = yen(sub);
+  document.getElementById('tax').textContent = yen(tax);
+  document.getElementById('total').textContent = '¥' + yen(total);
+}
+
+function setMsg(text, isErr, url) {
+  const m = document.getElementById('msg');
+  m.className = isErr ? 'err' : '';
+  m.textContent = text;
+  if (url) {
+    const a = document.createElement('a');
+    a.href = url; a.target = '_blank'; a.rel = 'noopener'; a.textContent = 'PDFを開く';
+    m.append(' ', a);
+  }
+}
+
+function submitQuote() {
+  const data = {
+    to: document.getElementById('to').value.trim(),
+    honorific: document.getElementById('honorific').value,
+    subject: document.getElementById('subject').value.trim(),
+    date: document.getElementById('date').value,
+    taxMode: document.getElementById('taxMode').value,
+    note: document.getElementById('note').value.trim(),
+    items: readItems()
+  };
+  if (!data.to) return setMsg('宛名を入れてください。', true);
+  if (!data.items.some(i => i.name && Number(i.qty) && i.price !== '')) return setMsg('品目・数量・単価を1行以上入れてください。', true);
+  const btn = document.getElementById('go');
+  btn.disabled = true;
+  setMsg('作成中...');
+  google.script.run
+    .withSuccessHandler(r => { btn.disabled = false; setMsg(r.no + ' を作成しました(合計 ¥' + yen(r.total) + ')。', false, r.url); })
+    .withFailureHandler(e => { btn.disabled = false; setMsg(e.message || String(e), true); })
+    .createQuote(data);
+}
+
+document.getElementById('taxMode').addEventListener('change', recalc);
+const d = new Date();
+document.getElementById('date').value = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+addRow();
+
+google.script.run
+  .withSuccessHandler(init => {
+    document.getElementById('lead').textContent = init.ready
+      ? '発行元: ' + init.company + ' / 有効期限: 発行日から' + init.validDays + '日'
+      : '初期設定がまだです。スプレッドシートの「見積書」メニューから「初期設定」を実行してください。';
+    const tl = document.getElementById('toList');
+    init.recipients.forEach(v => { const o = document.createElement('option'); o.value = v; tl.appendChild(o); });
+    const il = document.getElementById('itemList');
+    init.items.forEach(v => { const o = document.createElement('option'); o.value = v; il.appendChild(o); });
+  })
+  .withFailureHandler(e => setMsg(e.message || String(e), true))
+  .getInitData();
+</script>
+</body>
+</html>
