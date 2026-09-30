@@ -31,6 +31,7 @@ function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('見積書')
     .addItem('見積書を作成', 'openQuoteDialog')
+    .addItem('閲覧用ファイルに反映', 'syncViewMenu')
     .addSeparator()
     .addItem('初期設定(最初に1回)', 'setup')
     .addToUi();
@@ -68,12 +69,20 @@ function doPost(e) {
     const body = JSON.parse(e.postData.contents);
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const st = readSettings_(ss);
-    const key = String(st['アプリの合言葉'] || '');
-    if (!key || body.key !== key) throw new Error('合言葉が違います。スプレッドシートの「設定」シートにある「アプリの合言葉」を入れ直してください。');
+    // 合言葉は2種類。管理者=見積書・請求書と案件管理の全列 / 担当=案件管理の「公開する列」だけ
+    const adminKey = String(st['アプリの合言葉'] || '');
+    const staffKey = String(st['案件_担当の合言葉'] || '');
+    let role = '';
+    if (adminKey && body.key === adminKey) role = 'admin';
+    else if (staffKey && body.key === staffKey) role = 'staff';
+    if (!role) throw new Error('合言葉が違います。スプレッドシートの「設定」シートにある合言葉を入れ直してください。');
+    if (role === 'staff' && ['ankenList', 'ankenSave'].indexOf(body.action) < 0) throw new Error('この合言葉では案件管理だけ使えます。');
     if (body.action === 'init') out = apiInit_(ss, st);
     else if (body.action === 'issue') out = apiIssue_(ss, st, body.data || {});
     else if (body.action === 'attachPdf') out = apiAttachPdf_(ss, st, body);
     else if (body.action === 'load') out = apiLoad_(ss, body.no);
+    else if (body.action === 'ankenList') out = apiAnkenList_(ss, st, role);
+    else if (body.action === 'ankenSave') out = apiAnkenSave_(ss, st, role, body);
     else throw new Error('不明な操作です: ' + body.action);
     out.ok = true;
   } catch (err) {
@@ -262,6 +271,10 @@ function ensureSettingRows_(ss) {
     ['志_印影ファイルID', '', '角印(背景透過PNG)のDriveファイルID。空欄でも「志_印影_見積用.png」という名前の画像がDriveにあれば自動で押す'],
     ['志_見積番号の頭', 'KQ', '志の見積番号 = 頭-YYMMDD-連番(Canupとは別の連番)'],
     ['志_請求番号の頭', 'KINV', '志の請求番号 = 頭-YYMMDD-連番(Canupとは別の連番)'],
+    ['案件_担当の合言葉', Utilities.getUuid().replace(/-/g, ''), '案件管理アプリの担当者用。見積書・請求書は出せず、「公開する列」だけ見る・直せる。変えると担当者の端末で入れ直し'],
+    ['公開する列', PUBLIC_COLS_DEFAULT.join(','), '閲覧用ファイルと担当者用の画面に出す「物件管理」の列(カンマ区切り)。ここに無い列は原本にだけ残り、管理者の画面でだけ見える'],
+    ['閲覧用ファイルID', '', '社内共有用の閲覧専用ファイル。空欄なら初回にこのファイルと同じフォルダに作る。共有はこのファイルだけにする'],
+    ['閲覧用の最終反映', '', '自動で入る。日付が変わって最初に案件管理を開いたときにも反映し直す(支払アラートの日付計算のため)'],
   ].filter(r => keys.indexOf(r[0]) < 0);
   if (!add.length) return;
   const at = sh.getLastRow() + 1;
@@ -593,4 +606,279 @@ function exportSheetPdf_(ss, sheet) {
 
 function safeName_(s) {
   return String(s).replace(/[\\\/:*?"<>|\s]+/g, '_').slice(0, 40);
+}
+
+// ---------- 案件管理(anken.html)から呼ぶ ----------
+// 原本=このファイルの「物件管理」。アプリで読み書きし、公開する列だけを別ファイル(閲覧用)に書き写す。
+// 閲覧用ファイルにはこのファイルの他のシート(設定・台帳)が入らないので、社内にはそちらだけを共有する。
+
+const SHEET_BUKKEN = '物件管理';
+const BUKKEN_HEAD_ROW = 3;
+const PUBLIC_COLS_DEFAULT = ['No', '物件名', '支払い予定日', '受注状況', '支払確認', '支払アラート', '支払方法', '売上', '手数料(Canup)', '業務委託料', '担当者', '備考'];
+const ALERT_COLORS = {
+  '期限超過・未確認': ['#9C1C1C', '#FFFFFF'], '7日以内': ['#F8C9A0', null], '14日以内': ['#FFF2B3', null], '確認済': ['#D5EDDA', null],
+};
+
+function publicCols_(st) {
+  const v = String(st['公開する列'] || '').trim();
+  return v ? v.split(/[,、，]/).map(x => x.trim()).filter(String) : PUBLIC_COLS_DEFAULT;
+}
+
+// 物件管理の列の並びと、データのある範囲を調べる。列の型は入力規則・数式・表示形式から決める(列を足しても画面が追従する)
+function bukkenLayout_(ss) {
+  const sh = ss.getSheetByName(SHEET_BUKKEN);
+  if (!sh) throw new Error('「物件管理」シートが見つかりません。');
+  const head = sh.getRange(BUKKEN_HEAD_ROW, 1, 1, sh.getLastColumn()).getValues()[0].map(v => String(v).trim());
+  let width = head.indexOf('');
+  if (width < 0) width = head.length;
+  const nameIdx = head.indexOf('物件名');
+  if (nameIdx < 0) throw new Error('物件管理の' + BUKKEN_HEAD_ROW + '行目に「物件名」の見出しがありません。');
+  // データ範囲 = 見出しの次の行から、A列に数字以外の文字が出る行(下の仕様メモ)の手前まで
+  const start = BUKKEN_HEAD_ROW + 1;
+  const lastRow = Math.max(sh.getLastRow(), start);
+  const colA = sh.getRange(start, 1, lastRow - start + 1, 1).getValues();
+  let end = start - 1;
+  for (let i = 0; i < colA.length; i++) {
+    const v = colA[i][0];
+    if (v !== '' && typeof v !== 'number') break;
+    end = start + i;
+  }
+  const n = Math.max(end - start + 1, 0);
+  const rng = n ? sh.getRange(start, 1, n, width) : null;
+  const vals = rng ? rng.getValues() : [];
+  const fmls = rng ? rng.getFormulas() : [];
+  const dvs = rng ? rng.getDataValidations() : [];
+  const nfs = rng ? rng.getNumberFormats() : [];
+  const fields = head.slice(0, width).map((h, c) => {
+    const f = { name: h, type: 'text' };
+    if (fmls.some(r => r[c])) { f.type = 'auto'; }
+    else {
+      for (let i = 0; i < dvs.length; i++) {
+        const dv = dvs[i][c];
+        if (!dv) continue;
+        const t = dv.getCriteriaType();
+        if (t === SpreadsheetApp.DataValidationCriteria.CHECKBOX) { f.type = 'check'; break; }
+        if (t === SpreadsheetApp.DataValidationCriteria.VALUE_IN_RANGE) {
+          f.type = 'select';
+          f.options = dv.getCriteriaValues()[0].getValues().map(r => String(r[0]).trim()).filter(String);
+          break;
+        }
+        if (t === SpreadsheetApp.DataValidationCriteria.VALUE_IN_LIST) {
+          f.type = 'select'; f.options = dv.getCriteriaValues()[0].map(String); break;
+        }
+      }
+      if (f.type === 'text') {
+        const nf = nfs.map(r => String(r[c])).find(x => x && x !== 'General' && x !== '@') || '';
+        if (vals.some(r => r[c] instanceof Date) || /y{2,4}/i.test(nf)) f.type = 'date';
+        else if (/[¥￥]|#,##0/.test(nf) || vals.some(r => typeof r[c] === 'number' && r[c] >= 1000)) f.type = 'money';
+        else if (h === '備考') f.type = 'note';
+      }
+    }
+    return f;
+  });
+  return { sh, head: head.slice(0, width), width, nameIdx, start, end, vals, fields };
+}
+
+function cellOut_(v, type) {
+  if (v instanceof Date) return Utilities.formatDate(v, 'Asia/Tokyo', 'yyyy-MM-dd');
+  if (type === 'check') return v === true;
+  return v === null || v === undefined ? '' : v;
+}
+
+function apiAnkenList_(ss, st, role) {
+  ensureSettingRows_(ss);
+  st = readSettings_(ss);
+  // 支払アラートは日付で変わるので、日付が変わって最初に開いたときに閲覧用も反映し直す
+  const today = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
+  let viewUrl = '';
+  const lastSync = st['閲覧用の最終反映'] instanceof Date
+    ? Utilities.formatDate(st['閲覧用の最終反映'], 'Asia/Tokyo', 'yyyy-MM-dd') : String(st['閲覧用の最終反映'] || '').slice(0, 10);
+  if (lastSync !== today) {
+    try { viewUrl = syncView_(ss, st); } catch (e) { /* 反映の失敗で一覧を止めない */ }
+  }
+  const L = bukkenLayout_(ss);
+  const pub = publicCols_(st);
+  const show = L.fields.map((f, c) => role === 'admin' || pub.indexOf(f.name) >= 0 ? c : -1).filter(c => c >= 0);
+  const rows = [];
+  L.vals.forEach((r, i) => {
+    if (String(r[L.nameIdx]).trim() === '') return;
+    const v = {};
+    show.forEach(c => v[L.fields[c].name] = cellOut_(r[c], L.fields[c].type));
+    rows.push({ row: L.start + i, v });
+  });
+  const id = st['閲覧用ファイルID'];
+  return {
+    role, fields: show.map(c => Object.assign({ public: pub.indexOf(L.fields[c].name) >= 0 }, L.fields[c])),
+    rows, today,
+    viewUrl: role === 'admin' ? (viewUrl || (id ? 'https://docs.google.com/spreadsheets/d/' + id + '/edit' : '')) : '',
+  };
+}
+
+// body: { row: 行番号(新規はnull), name: 読み込んだ時の物件名(取り違え防止), values: {列名: 値} }
+function apiAnkenSave_(ss, st, role, body) {
+  const lock = LockService.getDocumentLock();
+  lock.waitLock(30000);
+  try {
+    const L = bukkenLayout_(ss);
+    const sh = L.sh;
+    const pub = publicCols_(st);
+    const values = body.values || {};
+    let row = Number(body.row) || 0;
+    if (row) {
+      if (row < L.start || row > L.end) throw new Error('行番号がデータの範囲外です。一覧を読み直してください。');
+      const now = String(L.vals[row - L.start][L.nameIdx]).trim();
+      if (now !== String(body.name || '').trim()) throw new Error('この行は別の場所で書き換えられています(今は「' + now + '」)。一覧を読み直してから直してください。');
+    } else {
+      if (!String(values['物件名'] || '').trim()) throw new Error('物件名が空です。');
+      row = newBukkenRow_(L);
+    }
+    const statusIdx = L.head.indexOf('受注状況');
+    const status = statusIdx >= 0 && values['受注状況'] !== undefined ? String(values['受注状況']) : (statusIdx >= 0 ? String(sh.getRange(row, statusIdx + 1).getValue()) : '');
+    L.fields.forEach((f, c) => {
+      if (f.type === 'auto' || values[f.name] === undefined) return;
+      if (role !== 'admin' && pub.indexOf(f.name) < 0) return;
+      const cell = sh.getRange(row, c + 1);
+      let v = values[f.name];
+      if (f.type === 'check') return; // 受注状況に合わせて下でまとめて扱う
+      if (f.type === 'date') v = v ? new Date(String(v) + 'T00:00:00+09:00') : '';
+      else if (f.type === 'money') v = v === '' || v === null ? '' : Number(String(v).replace(/[^\d.-]/g, ''));
+      else if (f.type === 'select') { v = String(v || ''); if (v && f.options && f.options.indexOf(v) < 0) throw new Error(f.name + 'に「' + v + '」は選べません。'); }
+      else v = String(v == null ? '' : v);
+      if (f.type === 'money' && v !== '' && isNaN(v)) throw new Error(f.name + 'は数字で入れてください。');
+      cell.setValue(v);
+    });
+    // 支払確認: 受注の行だけチェックボックスを出す(シートのonEditと同じ動き。スクリプトからの書き込みではonEditが動かないため)
+    const checkIdx = L.head.indexOf('支払確認');
+    if (checkIdx >= 0 && statusIdx >= 0 && (role === 'admin' || pub.indexOf('支払確認') >= 0)) {
+      const box = sh.getRange(row, checkIdx + 1);
+      if (status === '受注') {
+        if (!box.getDataValidation()) box.insertCheckboxes();
+        if (values['支払確認'] !== undefined) box.setValue(values['支払確認'] === true);
+      } else {
+        box.clearDataValidations().clearContent();
+      }
+    }
+    SpreadsheetApp.flush();
+    let viewErr = '';
+    try { syncView_(ss, readSettings_(ss)); } catch (e) { viewErr = e.message || String(e); }
+    const out = apiAnkenList_(ss, readSettings_(ss), role);
+    out.saved = row;
+    out.viewErr = viewErr;
+    return out;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// 新しい行: データ範囲で物件名が空の最初の行。無ければ最後の行の下に1行足す。
+// その行に数式(No・支払アラート等)が無ければ、上の行から数式と書式を写す
+function newBukkenRow_(L) {
+  const sh = L.sh;
+  let row = 0;
+  for (let i = 0; i < L.vals.length; i++) {
+    if (String(L.vals[i][L.nameIdx]).trim() === '') { row = L.start + i; break; }
+  }
+  if (!row) {
+    sh.insertRowAfter(L.end);
+    row = L.end + 1;
+  }
+  const src = row > L.start ? row - 1 : 0;
+  const fAuto = L.fields.map(f => f.type === 'auto');
+  if (src && fAuto.some(Boolean)) {
+    const tf = sh.getRange(row, 1, 1, L.width).getFormulas()[0];
+    if (fAuto.some((a, c) => a && !tf[c])) {
+      sh.getRange(src, 1, 1, L.width).copyTo(sh.getRange(row, 1, 1, L.width));
+      // 写したのは数式と書式だけにしたいので、入力する列の値と入力規則(チェックボックス)を空にする
+      L.fields.forEach((f, c) => {
+        if (f.type === 'auto') return;
+        const cell = sh.getRange(row, c + 1);
+        if (f.type === 'check') cell.clearDataValidations();
+        cell.clearContent();
+      });
+    }
+  }
+  return row;
+}
+
+function syncViewMenu() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  ensureSettingRows_(ss);
+  const url = syncView_(ss, readSettings_(ss));
+  SpreadsheetApp.getUi().alert('閲覧用ファイルに反映しました。\n' + url);
+}
+
+// 閲覧用ファイルに「公開する列」だけを書き写す。値と表示形式だけを写し、数式・入力規則は持ち込まない
+function syncView_(ss, st) {
+  const L = bukkenLayout_(ss);
+  const pub = publicCols_(st);
+  const cols = L.fields.map((f, c) => pub.indexOf(f.name) >= 0 ? c : -1).filter(c => c >= 0);
+  let vs;
+  const id = String(st['閲覧用ファイルID'] || '').trim();
+  if (id) vs = SpreadsheetApp.openById(id);
+  else {
+    vs = SpreadsheetApp.create('株式会社Canup_物件管理リスト(閲覧用)');
+    vs.setSpreadsheetTimeZone('Asia/Tokyo');
+    const parents = DriveApp.getFileById(ss.getId()).getParents();
+    if (parents.hasNext()) DriveApp.getFileById(vs.getId()).moveTo(parents.next());
+    writeSetting_(ss, '閲覧用ファイルID', vs.getId());
+  }
+  let sh = vs.getSheets()[0];
+  sh.setName('物件管理');
+  vs.getSheets().slice(1).forEach(x => vs.deleteSheet(x));
+  sh.clear();
+  sh.clearConditionalFormatRules();
+  sh.getDataRange().clearDataValidations();
+
+  const srcRows = [];
+  const srcFmts = [];
+  if (L.end >= L.start) {
+    const nfs = L.sh.getRange(L.start, 1, L.end - L.start + 1, L.width).getNumberFormats();
+    L.vals.forEach((r, i) => {
+      if (String(r[L.nameIdx]).trim() === '') return;
+      srcRows.push(cols.map(c => L.fields[c].type === 'check' ? (r[c] === true ? '済' : r[c] === false ? '未' : '') : r[c]));
+      srcFmts.push(cols.map(c => L.fields[c].type === 'check' ? '@' : nfs[i][c]));
+    });
+  }
+  const w = cols.length;
+  if (sh.getMaxColumns() < w) sh.insertColumnsAfter(sh.getMaxColumns(), w - sh.getMaxColumns());
+  const stamp = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy/MM/dd HH:mm');
+  sh.getRange(1, 1).setValue('株式会社Canup 物件管理リスト(閲覧用)').setFontSize(14).setFontWeight('bold');
+  sh.getRange(2, 1).setValue('最終更新 ' + stamp + '　案件管理アプリから自動で書き写しています。このファイルは直さないでください。').setFontColor('#5B6470');
+  sh.getRange(3, 1, 1, w).setValues([cols.map(c => L.fields[c].name)])
+    .setFontWeight('bold').setBackground('#1F3864').setFontColor('#FFFFFF').setVerticalAlignment('middle');
+  if (srcRows.length) {
+    const body = sh.getRange(4, 1, srcRows.length, w);
+    body.setNumberFormats(srcFmts).setValues(srcRows).setVerticalAlignment('middle')
+      .setBorder(true, true, true, true, true, true, '#D8DDE3', SpreadsheetApp.BorderStyle.SOLID);
+    // 色: 支払アラートの意味ごと / 失注の行はグレー
+    const aIdx = cols.findIndex(c => L.fields[c].name === '支払アラート');
+    const sIdx = cols.findIndex(c => L.fields[c].name === '受注状況');
+    const bg = srcRows.map(r => r.map(() => '#FFFFFF'));
+    const fc = srcRows.map(r => r.map(() => '#1B1F24'));
+    srcRows.forEach((r, i) => {
+      if (sIdx >= 0 && r[sIdx] === '失注') { fc[i] = fc[i].map(() => '#9AA1A9'); return; }
+      const col = aIdx >= 0 ? ALERT_COLORS[String(r[aIdx])] : null;
+      if (col) { bg[i][aIdx] = col[0]; if (col[1]) fc[i][aIdx] = col[1]; }
+    });
+    body.setBackgrounds(bg).setFontColors(fc);
+  }
+  sh.setFrozenRows(3);
+  cols.forEach((c, i) => {
+    const t = L.fields[c].type, n = L.fields[c].name;
+    sh.setColumnWidth(i + 1, n === '物件名' ? 220 : n === '備考' ? 360 : n === 'No' ? 44 : t === 'money' ? 110 : t === 'date' ? 100 : 92);
+  });
+  const noteIdx = cols.findIndex(c => L.fields[c].name === '備考');
+  if (noteIdx >= 0 && srcRows.length) sh.getRange(4, noteIdx + 1, srcRows.length, 1).setWrap(true);
+  const extra = sh.getMaxColumns() - w;
+  if (extra > 0) sh.deleteColumns(w + 1, extra);
+  writeSetting_(ss, '閲覧用の最終反映', Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd HH:mm'));
+  return 'https://docs.google.com/spreadsheets/d/' + vs.getId() + '/edit';
+}
+
+function writeSetting_(ss, key, value) {
+  const sh = ss.getSheetByName(SHEET_SETTINGS);
+  const keys = sh.getRange(1, 1, sh.getLastRow(), 1).getValues().map(r => r[0]);
+  const i = keys.indexOf(key);
+  if (i >= 0) sh.getRange(i + 1, 2).setValue(value);
+  else sh.appendRow([key, value, '']);
 }

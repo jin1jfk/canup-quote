@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Canup 案件管理</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink:#1b1f24; --sub:#5b6470; --faint:#8a929c; --line:#d8dde3; --soft:#f4f6f8; --bg:#ffffff;
+    --navy:#1F3864; --err:#a3261e; --ok:#1d6b3a;
+    --over:#9C1C1C; --d7:#F8C9A0; --d14:#FFF2B3; --done:#D5EDDA;
+  }
+  * { box-sizing:border-box; }
+  html, body { margin:0; background:var(--soft); color:var(--ink); }
+  body { font:15px/1.65 "Noto Sans JP","Hiragino Sans",sans-serif; }
+  header.bar { background:var(--bg); border-bottom:1px solid var(--line); padding:12px 16px; display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; }
+  header.bar h1 { font-size:17px; margin:0; letter-spacing:.02em; }
+  header.bar .who { color:var(--sub); font-size:13px; }
+  header.bar .right { margin-left:auto; display:flex; gap:8px; align-items:baseline; }
+  header.bar a { color:var(--navy); font-size:13px; }
+  main { max-width:1100px; margin:0 auto; padding:16px; }
+  .panel { background:var(--bg); border:1px solid var(--line); border-radius:4px; padding:16px; margin-bottom:14px; }
+  .panel h2 { font-size:14px; margin:0 0 10px; color:var(--navy); letter-spacing:.04em; }
+  label, .lbl { display:block; font-size:12px; color:var(--sub); margin:12px 0 3px; }
+  input, select, textarea { width:100%; font:inherit; font-size:16px; padding:8px 10px; border:1px solid var(--line); border-radius:3px; background:#fff; color:var(--ink); }
+  input:focus, select:focus, textarea:focus { outline:2px solid var(--navy); outline-offset:-1px; }
+  textarea { min-height:96px; resize:vertical; }
+  button.plain { background:#fff; border:1px solid var(--line); border-radius:3px; padding:6px 12px; font:inherit; font-size:13px; cursor:pointer; color:var(--ink); }
+  button.primary { background:var(--navy); color:#fff; border:0; border-radius:3px; padding:10px 18px; font:inherit; font-size:15px; font-weight:700; letter-spacing:.04em; cursor:pointer; }
+  button.primary:disabled { opacity:.45; cursor:default; }
+  .msg { font-size:14px; min-height:1.6em; margin-top:8px; }
+  .msg.err { color:var(--err); }
+  .msg.ok { color:var(--ok); }
+  .hint { font-size:12px; color:var(--faint); margin:6px 0 0; }
+  #setup { display:none; }
+  #setup.show { display:block; }
+
+  /* 要対応 */
+  .due { display:flex; flex-wrap:wrap; gap:6px 18px; align-items:baseline; margin:0 0 12px; font-size:14px; }
+  .due b { font-size:20px; font-variant-numeric:tabular-nums; margin:0 2px 0 6px; }
+  .due button { border:0; background:none; font:inherit; color:inherit; padding:2px 0; cursor:pointer; border-bottom:1px solid transparent; }
+  .due button:hover, .due button.on { border-bottom-color:var(--ink); }
+  .due .mk { display:inline-block; width:10px; height:10px; border-radius:2px; vertical-align:0; }
+  .due .none { color:var(--sub); }
+
+  /* 絞り込み */
+  .tools { display:grid; grid-template-columns:auto 1fr auto; gap:10px; align-items:center; margin-bottom:10px; }
+  .seg { display:flex; border:1px solid var(--line); border-radius:3px; overflow:hidden; background:#fff; }
+  .seg button { font:inherit; font-size:13px; padding:7px 12px; border:0; background:#fff; color:var(--sub); cursor:pointer; white-space:nowrap; }
+  .seg button + button { border-left:1px solid var(--line); }
+  .seg button.on { background:var(--navy); color:#fff; font-weight:700; }
+  .seg .n { font-variant-numeric:tabular-nums; margin-left:4px; font-weight:400; opacity:.8; }
+  .tools input { font-size:15px; }
+
+  /* 一覧 */
+  .list { background:var(--bg); border:1px solid var(--line); border-radius:4px; }
+  .row { display:grid; grid-template-columns:1fr auto; gap:4px 16px; padding:11px 14px; border-top:1px solid var(--line); cursor:pointer; }
+  .row:first-child { border-top:0; }
+  .row:hover { background:#f9fafb; }
+  .row .nm { font-weight:700; }
+  .row .nm small { color:var(--faint); font-weight:400; margin-right:8px; font-variant-numeric:tabular-nums; }
+  .row .sub { grid-column:1; font-size:13px; color:var(--sub); display:flex; flex-wrap:wrap; gap:2px 14px; }
+  .row .amt { grid-column:2; grid-row:1; text-align:right; font-variant-numeric:tabular-nums; font-weight:500; }
+  .row .al { grid-column:2; grid-row:2; text-align:right; }
+  .row.lost .nm, .row.lost .amt { color:var(--faint); font-weight:400; }
+  .chip { display:inline-block; font-size:12px; padding:0 8px; border-radius:2px; line-height:1.7; white-space:nowrap; }
+  .chip.over { background:var(--over); color:#fff; }
+  .chip.d7 { background:var(--d7); }
+  .chip.d14 { background:var(--d14); }
+  .chip.done { background:var(--done); }
+  .st { font-weight:500; color:var(--ink); }
+  .st.lost { color:var(--faint); }
+  .empty { padding:28px 16px; text-align:center; color:var(--sub); font-size:14px; }
+
+  /* 編集 */
+  .editor { position:fixed; inset:0; background:rgba(27,31,36,.35); display:none; z-index:10; }
+  .editor.show { display:block; }
+  .sheet { position:absolute; top:0; right:0; bottom:0; width:min(520px, 100%); background:#fff; display:flex; flex-direction:column; border-left:1px solid var(--line); }
+  .sheet .hd { padding:14px 16px; border-bottom:1px solid var(--line); display:flex; align-items:baseline; gap:12px; }
+  .sheet .hd h2 { font-size:16px; margin:0; }
+  .sheet .hd button { margin-left:auto; }
+  .sheet .bd { padding:4px 16px 20px; overflow:auto; flex:1; }
+  .sheet .ft { padding:12px 16px; border-top:1px solid var(--line); display:flex; gap:10px; align-items:center; }
+  .sheet .ft .msg { margin:0; flex:1; }
+  .f .lb { display:flex; gap:8px; align-items:baseline; }
+  .f .tag { font-size:11px; color:var(--sub); border:1px solid var(--line); padding:0 6px; border-radius:2px; }
+  .f .ro { padding:8px 10px; background:var(--soft); border-radius:3px; color:var(--sub); min-height:40px; font-variant-numeric:tabular-nums; }
+  .f.check label.cb { display:flex; align-items:center; gap:10px; font-size:15px; color:var(--ink); margin:4px 0 0; cursor:pointer; }
+  .f.check input { width:22px; height:22px; }
+  .two { display:grid; grid-template-columns:1fr 1fr; gap:0 12px; }
+
+  footer { max-width:1100px; margin:0 auto; padding:4px 16px 32px; font-size:12px; color:var(--faint); }
+
+  @media (max-width:640px) {
+    .tools { grid-template-columns:1fr auto; }
+    .tools .seg { grid-column:1 / -1; overflow-x:auto; }
+    .two { grid-template-columns:1fr; }
+  }
+</style>
+</head>
+<body>
+<header class="bar">
+  <h1>Canup 案件管理</h1>
+  <span class="who" id="who">未接続</span>
+  <span class="right">
+    <a id="viewLink" href="#" target="_blank" rel="noopener" hidden>閲覧用ファイル</a>
+    <button class="plain" type="button" onclick="toggleSetup()">接続設定</button>
+  </span>
+</header>
+
+<main>
+  <section class="panel" id="setup">
+    <h2>接続設定(この端末で最初に1回)</h2>
+    <label for="apiKey">合言葉</label>
+    <input id="apiKey" autocomplete="off">
+    <p class="hint">合言葉は中村さんから受け取ってください。入れた内容はこの端末のブラウザにだけ保存されます。</p>
+    <label for="apiUrl">スプレッドシート側のURL(通常は空欄のまま)</label>
+    <input id="apiUrl" placeholder="空欄なら既定の接続先を使います" autocomplete="off">
+    <button class="plain" type="button" style="margin-top:12px" onclick="saveSetup()">保存して接続</button>
+    <div class="msg" id="setupMsg"></div>
+  </section>
+
+  <div class="due" id="due"></div>
+
+  <div class="tools">
+    <div class="seg" id="seg"></div>
+    <input id="q" type="search" placeholder="物件名・備考で探す" autocomplete="off">
+    <button class="primary" type="button" id="addBtn" onclick="openEditor(null)" disabled>新しい案件</button>
+  </div>
+
+  <div class="msg" id="msg" style="margin:0 0 8px"></div>
+  <div class="list" id="list"><div class="empty">読み込み中...</div></div>
+</main>
+
+<footer id="foot">保存するとスプレッドシート(原本)に書き込まれ、閲覧用ファイルにも自動で反映されます。</footer>
+
+<div class="editor" id="editor" onclick="if (event.target === this) closeEditor()">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="edTitle">
+    <div class="hd"><h2 id="edTitle">案件</h2><button class="plain" type="button" onclick="closeEditor()">閉じる</button></div>
+    <div class="bd" id="edBody"></div>
+    <div class="ft"><div class="msg" id="edMsg"></div><button class="primary" type="button" id="saveBtn" onclick="save()">保存</button></div>
+  </div>
+</div>
+
+<script>
+// 接続先は見積書アプリと同じ Apps Script。合言葉は担当者用と管理者用の2種類があり、担当者用では公開する列だけが届く
+const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbyuCVj4OsMXzrhF6AFxGG8uQGFj887OGhWDpVW3EY_5_b2gUiDmhtoX-dPo_h-rneO1/exec';
+const LS = { url:'canupQuote.apiUrl', key:'canupAnken.apiKey', quoteKey:'canupQuote.apiKey', filter:'canupAnken.filter' };
+const ALERTS = { '期限超過・未確認':'over', '7日以内':'d7', '14日以内':'d14', '確認済':'done' };
+const ALERT_ORDER = { over:0, d7:1, d14:2 };
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function lsGet(k){ try { return localStorage.getItem(k) || ''; } catch(e){ return ''; } }
+function lsSet(k,v){ try { localStorage.setItem(k, v); } catch(e){} }
+const yen = n => n === '' || n == null || isNaN(Number(n)) ? '' : '¥' + Number(n).toLocaleString('ja-JP');
+const mdDate = s => { if (!s) return ''; const p = String(s).split('-'); return p.length === 3 ? Number(p[1]) + '/' + Number(p[2]) : String(s); };
+
+let data = { fields:[], rows:[], role:'' };
+let filter = lsGet(LS.filter) || 'すべて';
+let alertOnly = '';
+let editing = null;  // { row, name } / 新規は { row:null }
+let busy = false;
+
+// ---------- 通信 ----------
+function apiKey() { return lsGet(LS.key) || lsGet(LS.quoteKey); }
+async function api(action, payload) {
+  const url = lsGet(LS.url) || DEFAULT_API_URL;
+  if (!apiKey()) throw new Error('合言葉がまだ入っていません。右上の「接続設定」から入れてください。');
+  let res;
+  try {
+    res = await fetch(url, { method:'POST', headers:{ 'Content-Type':'text/plain;charset=utf-8' },
+      body: JSON.stringify(Object.assign({ key: apiKey(), action }, payload || {})) });
+  } catch (e) {
+    throw new Error('スプレッドシートにつながりませんでした。電波の状態を確認して、もう一度開き直してください。');
+  }
+  let j;
+  try { j = await res.json(); } catch (e) { throw new Error('スプレッドシートから想定外の応答がありました(HTTP ' + res.status + ')。接続設定のURLが /exec で終わるものか確認してください。'); }
+  if (!j.ok) throw new Error(j.error || '原因不明のエラーです。');
+  return j;
+}
+
+async function load() {
+  $('who').textContent = '接続中...';
+  try {
+    apply(await api('ankenList'));
+  } catch (e) {
+    $('who').textContent = '未接続';
+    $('list').innerHTML = '<div class="empty">一覧を読み込めませんでした。</div>';
+    setMsg('msg', e.message, 'err');
+    if (!apiKey()) $('setup').classList.add('show');
+  }
+}
+
+function apply(j) {
+  data = j;
+  $('who').textContent = j.role === 'admin' ? '管理者(全列)' : '担当者';
+  $('addBtn').disabled = false;
+  const v = $('viewLink');
+  if (j.viewUrl) { v.href = j.viewUrl; v.hidden = false; } else v.hidden = true;
+  setMsg('msg', '');
+  draw();
+}
+
+// ---------- 一覧 ----------
+const F = name => data.fields.find(f => f.name === name);
+const alertCls = r => ALERTS[r.v['支払アラート']] || '';
+
+function draw() {
+  const statusF = F('受注状況');
+  const opts = ['すべて'].concat(statusF && statusF.options ? statusF.options : []);
+  if (opts.indexOf(filter) < 0) filter = 'すべて';
+  const count = s => s === 'すべて' ? data.rows.length : data.rows.filter(r => r.v['受注状況'] === s).length;
+  $('seg').innerHTML = opts.map(s => '<button type="button" class="' + (s === filter ? 'on' : '') + '" data-s="' + esc(s) + '">' + esc(s) + '<span class="n">' + count(s) + '</span></button>').join('');
+  $('seg').querySelectorAll('button').forEach(b => b.onclick = () => { filter = b.dataset.s; alertOnly = ''; lsSet(LS.filter, filter); draw(); });
+
+  // 要対応(支払アラート)。押すとその件だけに絞る
+  const n = k => data.rows.filter(r => alertCls(r) === k).length;
+  const items = [['over', '期限超過・未確認'], ['d7', '7日以内'], ['d14', '14日以内']].filter(a => n(a[0]));
+  $('due').innerHTML = F('支払アラート')
+    ? (items.length
+      ? '<span>支払いの要対応</span>' + items.map(a => '<button type="button" data-a="' + a[0] + '" class="' + (alertOnly === a[0] ? 'on' : '') + '"><span class="mk" style="background:var(--' + a[0] + ')"></span>' + a[1] + '<b>' + n(a[0]) + '</b>件</button>').join('')
+      : '<span class="none">支払いの要対応はありません</span>')
+    : '';
+  $('due').querySelectorAll('button').forEach(b => b.onclick = () => { alertOnly = alertOnly === b.dataset.a ? '' : b.dataset.a; filter = 'すべて'; draw(); });
+
+  const q = $('q').value.trim();
+  let rows = data.rows.filter(r =>
+    (filter === 'すべて' || r.v['受注状況'] === filter) &&
+    (!alertOnly || alertCls(r) === alertOnly) &&
+    (!q || [r.v['物件名'], r.v['備考'], r.v['担当者']].join(' ').indexOf(q) >= 0));
+  // 並び: 要対応の重い順 → 支払い予定日の近い順 → No
+  rows.sort((a, b) => {
+    const x = ALERT_ORDER[alertCls(a)] ?? 9, y = ALERT_ORDER[alertCls(b)] ?? 9;
+    if (x !== y) return x - y;
+    const da = a.v['支払い予定日'] || '9999', db = b.v['支払い予定日'] || '9999';
+    if (da !== db) return da < db ? -1 : 1;
+    return (Number(a.v['No']) || a.row) - (Number(b.v['No']) || b.row);
+  });
+
+  if (!data.rows.length) { $('list').innerHTML = '<div class="empty">まだ案件がありません。「新しい案件」から入れてください。</div>'; return; }
+  if (!rows.length) { $('list').innerHTML = '<div class="empty">この条件に合う案件はありません。</div>'; return; }
+  const money = F('売上') ? '売上' : (data.fields.find(f => f.type === 'money') || {}).name;
+  $('list').innerHTML = rows.map(r => {
+    const st = r.v['受注状況'] || '';
+    const sub = [
+      st ? '<span class="st' + (st === '失注' ? ' lost' : '') + '">' + esc(st) + '</span>' : '',
+      r.v['支払い予定日'] ? '<span>支払予定 ' + esc(mdDate(r.v['支払い予定日'])) + '</span>' : '',
+      r.v['支払方法'] ? '<span>' + esc(r.v['支払方法']) + '</span>' : '',
+      r.v['担当者'] ? '<span>' + esc(r.v['担当者']) + '</span>' : '',
+    ].join('');
+    const al = alertCls(r);
+    return '<div class="row' + (st === '失注' ? ' lost' : '') + '" data-row="' + r.row + '" tabindex="0">' +
+      '<div class="nm">' + (r.v['No'] !== undefined && r.v['No'] !== '' ? '<small>' + esc(r.v['No']) + '</small>' : '') + esc(r.v['物件名']) + '</div>' +
+      '<div class="amt">' + (money ? esc(yen(r.v[money])) : '') + '</div>' +
+      '<div class="sub">' + sub + '</div>' +
+      '<div class="al">' + (al ? '<span class="chip ' + al + '">' + esc(r.v['支払アラート']) + '</span>' : '') + '</div>' +
+      '</div>';
+  }).join('');
+  $('list').querySelectorAll('.row').forEach(el => {
+    const open = () => openEditor(data.rows.find(r => r.row === Number(el.dataset.row)));
+    el.onclick = open;
+    el.onkeydown = e => { if (e.key === 'Enter') open(); };
+  });
+}
+
+// ---------- 編集 ----------
+function openEditor(rec) {
+  editing = rec ? { row: rec.row, name: rec.v['物件名'] } : { row: null, name: '' };
+  const v = rec ? rec.v : {};
+  if (!rec) {
+    // 新規の初期値: 受注状況=提案中 / 担当者が1人だけならその人
+    const st = F('受注状況'), tn = F('担当者');
+    if (st && st.options && st.options.indexOf('提案中') >= 0) v['受注状況'] = '提案中';
+    if (tn && tn.options && tn.options.length === 1) v['担当者'] = tn.options[0];
+  }
+  $('edTitle').textContent = rec ? (v['No'] ? 'No.' + v['No'] + ' ' : '') + '案件を直す' : '新しい案件';
+  const isAdmin = data.role === 'admin';
+  const html = [];
+  const pair = [];
+  data.fields.forEach(f => {
+    if (f.name === 'No' || f.name === '支払アラート' && !rec) return;
+    const id = 'fd_' + data.fields.indexOf(f);
+    const tag = isAdmin && !f.public ? '<span class="tag">非公開</span>' : f.type === 'auto' ? '<span class="tag">自動</span>' : '';
+    const lb = '<div class="lb"><label for="' + id + '">' + esc(f.name) + '</label>' + tag + '</div>';
+    const val = v[f.name];
+    let inner;
+    if (f.type === 'auto') {
+      if (!rec) return;
+      inner = '<div class="ro">' + esc(typeof val === 'number' ? yen(val) : val) + '</div>';
+    } else if (f.type === 'check') {
+      html.push('<div class="f check" data-f="' + esc(f.name) + '" id="wrap_check">' + lb.replace('<label for="' + id + '"', '<span class="lbl"').replace('</label>', '</span>') +
+        '<label class="cb"><input type="checkbox" id="' + id + '"' + (val === true ? ' checked' : '') + '>支払いを確認した</label></div>');
+      return;
+    } else if (f.type === 'select') {
+      const o = (f.options || []).slice();
+      if (val && o.indexOf(val) < 0) o.push(val);
+      inner = '<select id="' + id + '"><option value="">(未選択)</option>' + o.map(x => '<option' + (x === val ? ' selected' : '') + '>' + esc(x) + '</option>').join('') + '</select>';
+    } else if (f.type === 'date') {
+      inner = '<input type="date" id="' + id + '" value="' + esc(val || '') + '">';
+    } else if (f.type === 'money') {
+      inner = '<input type="text" inputmode="numeric" id="' + id + '" value="' + esc(val === '' || val == null ? '' : Number(val).toLocaleString('ja-JP')) + '" placeholder="円">';
+    } else if (f.type === 'note') {
+      inner = '<textarea id="' + id + '">' + esc(val || '') + '</textarea>';
+    } else {
+      inner = '<input type="text" id="' + id + '" value="' + esc(val || '') + '"' + (f.name === '物件名' ? ' placeholder="例: 会社名(取扱商品)"' : '') + '>';
+    }
+    html.push('<div class="f" data-f="' + esc(f.name) + '">' + lb + inner + '</div>');
+  });
+  $('edBody').innerHTML = html.join('');
+  // 金額は2つずつ横に並べる(広い画面のみ)
+  const moneys = [...$('edBody').querySelectorAll('.f')].filter(el => { const f = F(el.dataset.f); return f && (f.type === 'money' || f.type === 'auto' && typeof v[f.name] === 'number'); });
+  for (let i = 0; i + 1 < moneys.length; i += 2) {
+    const w = document.createElement('div'); w.className = 'two';
+    moneys[i].before(w); w.append(moneys[i], moneys[i + 1]);
+  }
+  const stSel = fieldEl('受注状況');
+  if (stSel) stSel.addEventListener('change', syncCheck);
+  $('edBody').querySelectorAll('input[inputmode=numeric]').forEach(i => i.addEventListener('blur', () => {
+    const n = i.value.replace(/[^\d]/g, ''); i.value = n ? Number(n).toLocaleString('ja-JP') : '';
+  }));
+  syncCheck();
+  setMsg('edMsg', '');
+  $('saveBtn').disabled = false;
+  $('editor').classList.add('show');
+  const first = $('edBody').querySelector('input,select,textarea');
+  if (!rec && first) first.focus();
+}
+
+function fieldEl(name) { const i = data.fields.findIndex(f => f.name === name); return i >= 0 ? $('fd_' + i) : null; }
+
+// 支払確認のチェックは受注の案件だけ出す(シートと同じ決まり)
+function syncCheck() {
+  const w = $('wrap_check'), st = fieldEl('受注状況');
+  if (w) w.hidden = !!st && st.value !== '受注';
+}
+
+function closeEditor() {
+  if (busy) return;
+  $('editor').classList.remove('show');
+  editing = null;
+}
+
+async function save() {
+  if (busy || !editing) return;
+  const values = {};
+  data.fields.forEach(f => {
+    const el = fieldEl(f.name);
+    if (!el || f.type === 'auto') return;
+    if (f.type === 'check') { if (!$('wrap_check').hidden) values[f.name] = el.checked; return; }
+    values[f.name] = f.type === 'money' ? el.value.replace(/[^\d]/g, '') : el.value.trim();
+  });
+  if (!values['物件名']) { setMsg('edMsg', '物件名を入れてください。', 'err'); fieldEl('物件名').focus(); return; }
+  busy = true; $('saveBtn').disabled = true; setMsg('edMsg', '保存中...');
+  try {
+    const j = await api('ankenSave', { row: editing.row, name: editing.name, values });
+    apply(j);
+    busy = false;
+    closeEditor();
+    setMsg('msg', j.viewErr ? '保存しました。ただし閲覧用ファイルへの反映に失敗しました(' + j.viewErr + ')。次に開いたときにもう一度反映します。' : '保存しました。閲覧用ファイルにも反映済みです。', j.viewErr ? 'err' : 'ok');
+  } catch (e) {
+    busy = false; $('saveBtn').disabled = false;
+    setMsg('edMsg', e.message, 'err');
+  }
+}
+
+// ---------- その他 ----------
+function setMsg(id, text, cls) { const el = $(id); el.textContent = text || ''; el.className = 'msg' + (cls ? ' ' + cls : ''); }
+function toggleSetup() { $('setup').classList.toggle('show'); $('apiKey').value = lsGet(LS.key); $('apiUrl').value = lsGet(LS.url); }
+function saveSetup() {
+  const k = $('apiKey').value.trim(), u = $('apiUrl').value.trim();
+  if (!k) { setMsg('setupMsg', '合言葉を入れてください。', 'err'); return; }
+  if (u && !/^https:\/\/script\.google\.com\/.+\/exec$/.test(u)) { setMsg('setupMsg', 'URLは https://script.google.com/ で始まり /exec で終わるものを入れてください。空欄でもかまいません。', 'err'); return; }
+  lsSet(LS.key, k); lsSet(LS.url, u);
+  setMsg('setupMsg', '保存しました。', 'ok');
+  $('setup').classList.remove('show');
+  load();
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('editor').classList.contains('show')) closeEditor(); });
+$('q').addEventListener('input', draw);
+load();
+</script>
+</body>
+</html>
