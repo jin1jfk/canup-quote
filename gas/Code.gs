@@ -36,6 +36,23 @@ function onOpen() {
     .addToUi();
 }
 
+// 物件管理: 受注状況が「受注」の行だけ支払確認のチェックボックスを出す(それ以外は消す)
+function onEdit(e) {
+  const sh = e.range.getSheet();
+  if (sh.getName() !== '物件管理') return;
+  const head = sh.getRange(3, 1, 1, sh.getLastColumn()).getValues()[0];
+  const cs = head.indexOf('受注状況') + 1, cc = head.indexOf('支払確認') + 1;
+  if (!cs || !cc || e.range.getColumn() > cs || e.range.getLastColumn() < cs) return;
+  for (let r = Math.max(e.range.getRow(), 4); r <= e.range.getLastRow(); r++) {
+    const box = sh.getRange(r, cc);
+    if (sh.getRange(r, cs).getValue() === '受注') {
+      if (!box.getDataValidation()) box.insertCheckboxes();
+    } else {
+      box.clearDataValidations().clearContent();
+    }
+  }
+}
+
 function doGet() {
   return HtmlService.createTemplateFromFile('Index').evaluate()
     .setTitle('Canup 見積書')
