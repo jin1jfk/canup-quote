@@ -614,6 +614,7 @@ function safeName_(s) {
 const SHEET_BUKKEN = '物件管理';
 const BUKKEN_HEAD_ROW = 3;
 const PUBLIC_COLS_DEFAULT = ['No', '物件名', '支払い予定日', '受注状況', '支払確認', '支払アラート', '支払方法', '売上', '手数料(Canup)', '業務委託料', '担当者', '備考'];
+const STATUS_COLORS = { '受注': '#DCE8F7', '提案中': '#FFF6D6' };
 const ALERT_COLORS = {
   '期限超過・未確認': ['#9C1C1C', '#FFFFFF'], '7日以内': ['#F8C9A0', null], '14日以内': ['#FFF2B3', null], '確認済': ['#D5EDDA', null],
 };
@@ -851,34 +852,65 @@ function syncView_(ss, st) {
   }
   const w = cols.length;
   if (sh.getMaxColumns() < w) sh.insertColumnsAfter(sh.getMaxColumns(), w - sh.getMaxColumns());
+  const name = c => L.fields[c].name, type = c => L.fields[c].type;
+  const idx = n => cols.findIndex(c => name(c) === n);
+  // 短い項目は中央ぞろえ、金額は右ぞろえ、物件名と備考は左ぞろえ
+  const align = cols.map(c => type(c) === 'money' || (type(c) === 'auto' && name(c) === '業務委託料') ? 'right'
+    : name(c) === '物件名' || name(c) === '備考' ? 'left' : 'center');
+
+  // 見出し
   const stamp = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy/MM/dd HH:mm');
-  sh.getRange(1, 1).setValue('株式会社Canup 物件管理リスト(閲覧用)').setFontSize(14).setFontWeight('bold');
+  sh.getRange(1, 1).setValue('株式会社Canup 物件管理リスト(閲覧用)').setFontSize(16).setFontWeight('bold');
   sh.getRange(2, 1).setValue('最終更新 ' + stamp + '　案件管理アプリから自動で書き写しています。このファイルは直さないでください。').setFontColor('#5B6470');
-  sh.getRange(3, 1, 1, w).setValues([cols.map(c => L.fields[c].name)])
-    .setFontWeight('bold').setBackground('#1F3864').setFontColor('#FFFFFF').setVerticalAlignment('middle');
-  if (srcRows.length) {
-    const body = sh.getRange(4, 1, srcRows.length, w);
-    body.setNumberFormats(srcFmts).setValues(srcRows).setVerticalAlignment('middle')
-      .setBorder(true, true, true, true, true, true, '#D8DDE3', SpreadsheetApp.BorderStyle.SOLID);
-    // 色: 支払アラートの意味ごと / 失注の行はグレー
-    const aIdx = cols.findIndex(c => L.fields[c].name === '支払アラート');
-    const bg = srcRows.map(r => r.map(() => '#FFFFFF'));
-    const fc = srcRows.map(r => r.map(() => '#1B1F24'));
-    srcRows.forEach((r, i) => {
-      if (srcGroups[i] === 2) { fc[i] = fc[i].map(() => '#9AA1A9'); return; }
-      if (srcGroups[i] === 1) fc[i] = fc[i].map(() => '#6B737D'); // 入金済みは文字を薄く
-      const col = aIdx >= 0 ? ALERT_COLORS[String(r[aIdx])] : null;
-      if (col) { bg[i][aIdx] = col[0]; if (col[1]) fc[i][aIdx] = col[1]; }
+  sh.getRange(3, 1, 1, w).setValues([cols.map(name)])
+    .setFontWeight('bold').setBackground('#1F3864').setFontColor('#FFFFFF')
+    .setHorizontalAlignment('center').setVerticalAlignment('middle');
+  sh.setRowHeight(1, 34); sh.setRowHeight(2, 22); sh.setRowHeight(3, 32);
+
+  // 本体: 組ごとに見出し行(対応中 / 入金済み / 失注)を挟む
+  const GROUPS = [['対応中', '#E6EBF3'], ['入金済み', '#E4F1E7'], ['失注', '#ECEEF1']];
+  let r0 = 4;
+  const aIdx = idx('支払アラート'), sIdx = idx('受注状況'), pIdx = idx('支払確認');
+  GROUPS.forEach((G, g) => {
+    const members = srcRows.map((row, i) => ({ row, fmt: srcFmts[i], g: srcGroups[i] })).filter(x => x.g === g);
+    if (!members.length) return;
+    // 見出し行は結合しない(物件名の列を固定しているため、結合すると固定できない)。文字は物件名の列に置く
+    sh.getRange(r0, 1, 1, w).setBackground(G[1]).setFontWeight('bold').setFontSize(12).setFontColor('#1F3864').setVerticalAlignment('middle');
+    sh.getRange(r0, Math.max(idx('物件名'), 0) + 1).setValue('■ ' + G[0] + '　' + members.length + '件');
+    sh.setRowHeight(r0, 30);
+    r0++;
+    const n = members.length;
+    const body = sh.getRange(r0, 1, n, w);
+    body.setNumberFormats(members.map(x => x.fmt)).setValues(members.map(x => x.row))
+      .setVerticalAlignment('middle').setFontSize(11)
+      .setHorizontalAlignments(members.map(() => align))
+      .setBorder(true, true, true, true, true, true, '#D3D9E0', SpreadsheetApp.BorderStyle.SOLID);
+    const bg = members.map((x, i) => x.row.map(() => i % 2 ? '#F7F9FC' : '#FFFFFF'));
+    const fc = members.map(x => x.row.map(() => g === 2 ? '#9AA1A9' : g === 1 ? '#5B6470' : '#1B1F24'));
+    const fw = members.map(x => x.row.map(() => 'normal'));
+    members.forEach((x, i) => {
+      if (g === 2) return;
+      const st = sIdx >= 0 ? String(x.row[sIdx]) : '';
+      if (sIdx >= 0 && STATUS_COLORS[st]) { bg[i][sIdx] = STATUS_COLORS[st]; fw[i][sIdx] = 'bold'; }
+      if (pIdx >= 0 && x.row[pIdx] === '済') { bg[i][pIdx] = '#D5EDDA'; fc[i][pIdx] = '#1D6B3A'; fw[i][pIdx] = 'bold'; }
+      if (pIdx >= 0 && x.row[pIdx] === '未') { fc[i][pIdx] = '#A3261E'; fw[i][pIdx] = 'bold'; }
+      const col = aIdx >= 0 ? ALERT_COLORS[String(x.row[aIdx])] : null;
+      if (col) { bg[i][aIdx] = col[0]; fw[i][aIdx] = 'bold'; if (col[1]) fc[i][aIdx] = col[1]; }
+      const nIdx = idx('物件名');
+      if (nIdx >= 0) fw[i][nIdx] = 'bold';
     });
-    body.setBackgrounds(bg).setFontColors(fc);
-  }
-  sh.setFrozenRows(3);
-  cols.forEach((c, i) => {
-    const t = L.fields[c].type, n = L.fields[c].name;
-    sh.setColumnWidth(i + 1, n === '物件名' ? 220 : n === '備考' ? 360 : n === 'No' ? 44 : n === '支払アラート' ? 130 : t === 'money' ? 110 : t === 'date' ? 100 : 92);
+    body.setBackgrounds(bg).setFontColors(fc).setFontWeights(fw);
+    for (let k = 0; k < n; k++) sh.setRowHeight(r0 + k, 28);
+    const noteIdx = idx('備考');
+    if (noteIdx >= 0) sh.getRange(r0, noteIdx + 1, n, 1).setWrap(true).setFontSize(10).setFontColor(g === 2 ? '#9AA1A9' : '#5B6470');
+    r0 += n;
   });
-  const noteIdx = cols.findIndex(c => L.fields[c].name === '備考');
-  if (noteIdx >= 0 && srcRows.length) sh.getRange(4, noteIdx + 1, srcRows.length, 1).setWrap(true);
+  sh.setFrozenRows(3);
+  sh.setFrozenColumns(Math.max(idx('物件名') + 1, 0));
+  cols.forEach((c, i) => {
+    const t = type(c), n = name(c);
+    sh.setColumnWidth(i + 1, n === '物件名' ? 230 : n === '備考' ? 380 : n === 'No' ? 44 : n === '支払アラート' ? 136 : n === '支払確認' ? 72 : n === '担当者' ? 72 : t === 'money' || n === '業務委託料' ? 112 : t === 'date' ? 108 : 96);
+  });
   const extra = sh.getMaxColumns() - w;
   if (extra > 0) sh.deleteColumns(w + 1, extra);
   writeSetting_(ss, '閲覧用の最終反映', Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd HH:mm'));
