@@ -359,8 +359,8 @@ function openEditor(rec) {
   if (nm.item && items.indexOf(nm.item) < 0) items.unshift(nm.item);
   h.push('<div class="q"><div class="lb">何の案件か</div><div class="opts" id="e_items">' +
     items.map(x => '<button type="button" data-v="' + esc(x) + '" class="' + (x === nm.item ? 'on' : '') + '">' + esc(x) + '</button>').join('') +
-    '<button type="button" data-other="1">その他</button></div>' +
-    '<input id="e_item" style="margin-top:8px" value="' + esc(nm.item) + '" placeholder="その他のとき、ここに入れる" hidden>' +
+    '<button type="button" data-other="1">＋ 新しく入力</button></div>' +
+    '<input id="e_item" style="margin-top:8px" value="' + esc(nm.item) + '" placeholder="例: 内装工事(次からはボタンに出ます)" hidden>' +
     '<div class="preview" id="e_prev"></div></div>');
 
   // 3以降: 列ごと(物件名・No・アラート・備考は別扱い)。考える順(状況→金額→入金)に並べ、知らない列はシートの順で後ろへ
